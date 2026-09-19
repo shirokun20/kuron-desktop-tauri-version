@@ -9,8 +9,8 @@ pub mod network;
 use commands::{cmd_app_info, cmd_hello_world, cmd_home_feed};
 use core::{logger, AppState};
 use tauri::{
-    menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
-    Emitter, Manager,
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_opener::OpenerExt;
 
@@ -32,18 +32,12 @@ pub fn run() {
                 "Kuron",
                 true,
                 &[
-                    &PredefinedMenuItem::about(
+                    &MenuItem::with_id(
                         app,
-                        Some("Tentang Kuron"),
-                        Some(AboutMetadata {
-                            name: Some("Kuron".into()),
-                            version: Some(env!("CARGO_PKG_VERSION").into()),
-                            authors: Some(vec!["nhasix".into()]),
-                            website: Some(
-                                "https://github.com/shirokun20/kuron-mobile".into(),
-                            ),
-                            ..Default::default()
-                        }),
+                        "about-kuron",
+                        "Tentang Kuron",
+                        true,
+                        None::<&str>,
                     )?,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::services(app, None)?,
@@ -134,6 +128,18 @@ pub fn run() {
             Ok(())
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
+            "about-kuron" => {
+                if let Some(win) = app.get_webview_window("about") {
+                    let _ = win.set_focus();
+                } else {
+                    let _ = WebviewWindowBuilder::new(app, "about", WebviewUrl::App("/#about".into()))
+                        .title("Tentang Kuron")
+                        .inner_size(480.0, 800.0)
+                        .center()
+                        .resizable(false)
+                        .build();
+                }
+            }
             "toggle-sidebar" => {
                 if let Some(win) = app.get_webview_window("main") {
                     let _ = win.emit("toggle-sidebar", ());

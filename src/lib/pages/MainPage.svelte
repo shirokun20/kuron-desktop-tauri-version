@@ -5,6 +5,7 @@
   import { contentStore } from "../stores/content.svelte";
   import { helloStore } from "../stores/hello.svelte";
   import { SOURCES, sourceStore } from "../stores/source.svelte";
+  import { openAboutWindow } from "../api/window";
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import Sidebar from "../components/Sidebar.svelte";
@@ -50,6 +51,7 @@
   let activeNav = $state("home");
   let collapsed = $state(false);
   let name = $state("");
+  let navError = $state<string | null>(null);
   let featured = $derived(contentStore.feed[0] ?? null);
   let rest = $derived(contentStore.feed.slice(1));
   let version = $derived(helloStore.info?.version ?? "0.1.0");
@@ -57,6 +59,16 @@
   function submit(e: SubmitEvent) {
     e.preventDefault();
     helloStore.sayHello(name);
+  }
+
+  // "Tentang" buka popup window native (bukan ganti konten main).
+  async function selectNav(id: string) {
+    if (id === "about") {
+      navError = await openAboutWindow();
+      return;
+    }
+    navError = null;
+    activeNav = id;
   }
 
   onMount(() => {
@@ -76,7 +88,8 @@
     {collapsed}
     source={sourceStore.current}
     {version}
-    onSelect={(id) => (activeNav = id)}
+    onSelect={selectNav}
+    onToggle={() => (collapsed = !collapsed)}
   />
 
   <div class="main-col">
@@ -104,6 +117,9 @@
     </div>
 
     <main class="content">
+      {#if navError}
+        <p class="err">{navError}</p>
+      {/if}
       {#if contentStore.loading && contentStore.feed.length === 0}
         <p class="muted">Memuat feed…</p>
       {/if}

@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "source-picker"],
+  "windows": ["main", "source-picker", "about"],
   "permissions": [
     "core:default",
     "core:event:allow-emit",

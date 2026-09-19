@@ -56,7 +56,10 @@ selama Fase 0 (`ts-rs` generate nyusul ADR-004).
 ## 📦 Assets
 
 Dari `learn_flutter/nhasixapp/assets/`: `logo_app.webp`, `frame.webp`,
-fonts Komika/Bangers/KosugiMaru/ComicNeue di `src/assets/`. Jangan copy
-`donation_qris.jpeg`, `legal/`, `configs/` (besar/tidak relevan desktop).
+`donation_qris.jpeg` (151KB, dipakai About → Dukung Pengembang),
+`legal/id/*.md` (diadaptasi ke desktop: sumber NHentai/Hitomi/E-Hentai/MangaDex,
+path Pengaturan mobile dihapus, kontak → repo desktop),
+fonts Komika/Bangers/KosugiMaru/ComicNeue di `src/assets/`.
+Jangan copy `configs/` (tidak relevan desktop).
 App icon: `src/assets/icons/app-icon.png` (1024 PNG dari `frame.webp`) ->
 `pnpm tauri icon src/assets/icons/app-icon.png` regenerate `src-tauri/icons/`.

@@ -3,6 +3,7 @@
   // coral + pill subtitle), source selector (popover sheet ala bottomSheet),
   // grup BERANDA/EXPLORE/MORE, item chevron + indikator aktif, footer versi.
   import appIcon from "../../assets/icons/app-icon.png";
+  import logoApp from "../../assets/icons/logo_app.webp";
   import { openSourcePicker } from "../api/window";
 
   export interface NavItem {
@@ -23,9 +24,10 @@
     source: string;
     version: string;
     onSelect: (id: string) => void;
+    onToggle: () => void;
   }
 
-  let { groups, active, collapsed, source, version, onSelect }: Props = $props();
+  let { groups, active, collapsed, source, version, onSelect, onToggle }: Props = $props();
   let pickerError = $state<string | null>(null);
 
   async function openPicker() {
@@ -38,7 +40,11 @@
 </script>
 
 <aside class="sidebar" class:collapsed>
-  {#if !collapsed}
+  {#if collapsed}
+    <button class="mini-logo" onclick={onToggle} title="Buka sidebar">
+      <img src={logoApp} alt="Kuron" />
+    </button>
+  {:else}
     <div class="profile">
       <img class="avatar" src={appIcon} alt="Kuron" />
       <strong class="appname">Kuron</strong>
@@ -98,6 +104,25 @@
   }
   .sidebar.collapsed {
     width: 64px;
+  }
+  .mini-logo {
+    margin: 12px auto 4px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--card);
+    cursor: pointer;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .mini-logo:hover {
+    border-color: var(--primary);
+  }
+  .mini-logo img {
+    display: block;
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
   }
   .profile {
     display: flex;

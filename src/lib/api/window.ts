@@ -37,13 +37,19 @@ export async function setMainSize(): Promise<void> {
   }
 }
 
-/** Popup window native "Pilih Sumber". Fokuskan bila sudah ada.
+/** Popup window native. Fokuskan bila sudah ada.
  * @returns null bila OK, pesan error bila gagal (ditampilkan di UI). */
-export async function openSourcePicker(): Promise<string | null> {
+async function openPopup(
+  label: string,
+  hash: string,
+  title: string,
+  width: number,
+  height: number,
+): Promise<string | null> {
   try {
     let existing = null;
     try {
-      existing = await WebviewWindow.getByLabel("source-picker");
+      existing = await WebviewWindow.getByLabel(label);
     } catch {
       existing = null;
     }
@@ -51,11 +57,11 @@ export async function openSourcePicker(): Promise<string | null> {
       await existing.setFocus().catch(() => {});
       return null;
     }
-    const win = new WebviewWindow("source-picker", {
-      url: `${window.location.origin}/#source-picker`,
-      title: "Pilih Sumber",
-      width: 420,
-      height: 620,
+    const win = new WebviewWindow(label, {
+      url: `${window.location.origin}/${hash}`,
+      title,
+      width,
+      height,
       center: true,
       resizable: false,
       decorations: true,
@@ -83,4 +89,15 @@ export async function openSourcePicker(): Promise<string | null> {
   } catch (e) {
     return `Tauri window API tidak tersedia (mode browser?): ${e}`;
   }
+}
+
+/** Popup window native "Pilih Sumber". Fokuskan bila sudah ada.
+ * @returns null bila OK, pesan error bila gagal (ditampilkan di UI). */
+export function openSourcePicker(): Promise<string | null> {
+  return openPopup("source-picker", "#source-picker", "Pilih Sumber", 420, 620);
+}
+
+/** Popup window native "Tentang Kuron". Fokuskan bila sudah ada. */
+export function openAboutWindow(): Promise<string | null> {
+  return openPopup("about", "#about", "Tentang Kuron", 480, 800);
 }
