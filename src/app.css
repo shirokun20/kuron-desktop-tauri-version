@@ -1,0 +1,171 @@
+/* Kuron theme — port 1:1 dari kuron-mobile `colors_const.dart`.
+ * Var `--kuron-*` = nilai exact. Alias gaya shadcn (`--background`,
+ * `--primary`, ...) map ke token Kuron, jadi komponen shadcn-svelte
+ * bisa drop-in nanti tanpa ganti warna.
+ * Mode: `dark` (default Kuron) | `light` | `amoled` via
+ * `<html data-theme="...">`..radius default 12 (radiusLg paling dipakai). */
+
+:root,
+[data-theme="dark"] {
+  --kuron-bg: #1c1816;
+  --kuron-surface: #221e1c;
+  --kuron-card: #2a2522;
+  --kuron-card-alt: #2e2926;
+  --kuron-border: #4a3d36;
+  --kuron-text: #d4ccc4;
+  --kuron-text-sub: #9e948c;
+  --kuron-primary: #f1958e;
+  --kuron-on-primary: #1c1816;
+  --kuron-secondary: #d48a6a;
+  --kuron-tertiary: #e0827e;
+  --kuron-gold: #c8a06a;
+  --kuron-gradient-start: #2a2522;
+  --kuron-gradient-end: #221e1c;
+  --kuron-reader-bg: #1a1614;
+  --kuron-reader-text: #d0c8c0;
+
+  --background: var(--kuron-bg);
+  --foreground: var(--kuron-text);
+  --card: var(--kuron-card);
+  --card-foreground: var(--kuron-text);
+  --popover: var(--kuron-surface);
+  --popover-foreground: var(--kuron-text);
+  --primary: var(--kuron-primary);
+  --primary-foreground: var(--kuron-on-primary);
+  --secondary: var(--kuron-secondary);
+  --secondary-foreground: #1c1816;
+  --muted: var(--kuron-card-alt);
+  --muted-foreground: var(--kuron-text-sub);
+  --accent: var(--kuron-tertiary);
+  --accent-foreground: #1c1816;
+  --destructive: #c86858;
+  --destructive-foreground: #ffd8d4;
+  --success: #8ab87a;
+  --warning: #d4a060;
+  --info: #7bb8ff;
+  --border: var(--kuron-border);
+  --input: var(--kuron-border);
+  --ring: var(--kuron-primary);
+
+  --radius: 12px;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --kuron-bg: #efe6dc;
+  --kuron-surface: #f5ede4;
+  --kuron-card: #fcf7f0;
+  --kuron-card-alt: #faf3ec;
+  --kuron-border: #d6c8bc;
+  --kuron-text: #2e2722;
+  --kuron-text-sub: #7a6e66;
+  --kuron-primary: #c76a62;
+  --kuron-on-primary: #fcf7f0;
+  --kuron-secondary: #d48a6a;
+  --kuron-tertiary: #e0827e;
+  --kuron-gold: #b89060;
+  --kuron-gradient-start: #fcf7f0;
+  --kuron-gradient-end: #f5ede4;
+  --kuron-reader-bg: #f5ede4;
+  --kuron-reader-text: #2e2722;
+
+  --background: var(--kuron-bg);
+  --foreground: var(--kuron-text);
+  --card: var(--kuron-card);
+  --card-foreground: var(--kuron-text);
+  --popover: var(--kuron-surface);
+  --popover-foreground: var(--kuron-text);
+  --primary: var(--kuron-primary);
+  --primary-foreground: var(--kuron-on-primary);
+  --secondary: var(--kuron-secondary);
+  --secondary-foreground: #fcf7f0;
+  --muted: var(--kuron-card-alt);
+  --muted-foreground: var(--kuron-text-sub);
+  --accent: var(--kuron-tertiary);
+  --accent-foreground: #fcf7f0;
+  --destructive: #c86858;
+  --destructive-foreground: #fcf7f0;
+  --border: var(--kuron-border);
+  --input: var(--kuron-border);
+  --ring: var(--kuron-primary);
+
+  color-scheme: light;
+}
+
+[data-theme="amoled"] {
+  --kuron-bg: #000000;
+  --kuron-surface: #0c0a08;
+  --kuron-card: #12100e;
+  --kuron-card-alt: #161412;
+  --kuron-border: #362c28;
+  --kuron-text: #ccc4bc;
+  --kuron-text-sub: #8e847c;
+  --kuron-primary: #f1958e;
+  --kuron-on-primary: #000000;
+  --kuron-secondary: #d48a6a;
+  --kuron-tertiary: #e0827e;
+  --kuron-gold: #c8a06a;
+  --kuron-gradient-start: #12100e;
+  --kuron-gradient-end: #0c0a08;
+  --kuron-reader-bg: #000000;
+  --kuron-reader-text: #ccc4bc;
+
+  --background: var(--kuron-bg);
+  --foreground: var(--kuron-text);
+  --card: var(--kuron-card);
+  --card-foreground: var(--kuron-text);
+  --popover: var(--kuron-surface);
+  --popover-foreground: var(--kuron-text);
+  --primary: var(--kuron-primary);
+  --primary-foreground: var(--kuron-on-primary);
+  --secondary: var(--kuron-secondary);
+  --secondary-foreground: #000000;
+  --muted: var(--kuron-card-alt);
+  --muted-foreground: var(--kuron-text-sub);
+  --accent: var(--kuron-tertiary);
+  --accent-foreground: #000000;
+  --destructive: #c86858;
+  --destructive-foreground: #ffd8d4;
+  --border: var(--kuron-border);
+  --input: var(--kuron-border);
+  --ring: var(--kuron-primary);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--foreground);
+  background: var(--background);
+}
+
+button,
+input {
+  font: inherit;
+  color: var(--foreground);
+}
+
+/* Manga fonts — dari kuron-mobile assets/fonts (dipakai AI translate
+ * bubble overlay + draw mode, Fase 5). */
+@font-face {
+  font-family: "Komika";
+  src: url("./assets/fonts/Komika Axis.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bangers";
+  src: url("./assets/fonts/Bangers.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "KosugiMaru";
+  src: url("./assets/fonts/KosugiMaru.ttf") format("truetype");
+  font-display: swap;
+}

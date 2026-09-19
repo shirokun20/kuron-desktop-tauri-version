@@ -1,0 +1,40 @@
+//! ContentModel — serde + From Entity (port `fromEntity/toEntity/fromMap`).
+//! `ts-rs` generate types nyusul ADR-004.
+
+use serde::{Deserialize, Serialize};
+
+use crate::domain::Content;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentModel {
+    pub id: String,
+    pub title: String,
+    pub cover_url: String,
+    pub source_id: String,
+    pub upload_date: Option<String>,
+}
+
+impl From<ContentModel> for Content {
+    fn from(m: ContentModel) -> Self {
+        Self {
+            id: m.id,
+            title: m.title,
+            cover_url: m.cover_url,
+            source_id: m.source_id,
+            upload_date: m.upload_date,
+            is_favorite: false,
+        }
+    }
+}
+
+impl From<Content> for ContentModel {
+    fn from(e: Content) -> Self {
+        Self {
+            id: e.id,
+            title: e.title,
+            cover_url: e.cover_url,
+            source_id: e.source_id,
+            upload_date: e.upload_date,
+        }
+    }
+}

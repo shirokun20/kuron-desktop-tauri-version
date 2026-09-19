@@ -1,16 +1,19 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "kuron-desktop",
+  "productName": "Kuron",
   "version": "0.1.0",
-  "identifier": "id.nhasix.app.desktop",
+  "identifier": "id.nhasix.kuron",
   "build": {
-    "frontendDist": "../src"
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "pnpm dev:frontend",
+    "beforeBuildCommand": "pnpm build:frontend",
+    "frontendDist": "../dist"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "kuron-desktop",
+        "title": "Kuron Desktop — Hello World",
         "width": 800,
         "height": 600
       }

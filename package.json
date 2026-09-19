@@ -1,0 +1,26 @@
+{
+  "name": "kuron-desktop",
+  "version": "0.1.0",
+  "description": "Kuron Desktop — Tauri v2 pure desktop (win+mac+linux GUI). Svelte + Kuron theme.",
+  "type": "module",
+  "scripts": {
+    "dev:frontend": "vite",
+    "build:frontend": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@tauri-apps/cli": "^2",
+    "svelte": "^5.57.0",
+    "svelte-check": "^4.7.6",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.0"
+  }
+}
