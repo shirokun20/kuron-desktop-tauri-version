@@ -1,26 +1,22 @@
-/* Kuron theme — port 1:1 dari kuron-mobile `colors_const.dart`.
- * Var `--kuron-*` = nilai exact. Alias gaya shadcn (`--background`,
- * `--primary`, ...) map ke token Kuron, jadi komponen shadcn-svelte
- * bisa drop-in nanti tanpa ganti warna.
- * Mode: `dark` (default Kuron) | `light` | `amoled` via
- * `<html data-theme="...">`..radius default 12 (radiusLg paling dipakai). */
+/* Kuron theme — struktur dial dari NeedMCP `linen-meridian`
+ * (flat hairlines, tanpa shadow/gradient = no AI slop), warna identitas
+ * coral Kuron dipertahankan. Mode: `dark` (default) | `light` via
+ * `<html data-theme="...">`. Radius default 12. */
 
 :root,
 [data-theme="dark"] {
-  --kuron-bg: #1c1816;
-  --kuron-surface: #221e1c;
-  --kuron-card: #2a2522;
-  --kuron-card-alt: #2e2926;
-  --kuron-border: #4a3d36;
-  --kuron-text: #d4ccc4;
-  --kuron-text-sub: #9e948c;
+  --kuron-bg: #1a1714;
+  --kuron-surface: #292420;
+  --kuron-card: #332c26;
+  --kuron-card-alt: #221e1a;
+  --kuron-border: #3e362e;
+  --kuron-text: #f5efe6;
+  --kuron-text-sub: #a89c8c;
   --kuron-primary: #f1958e;
-  --kuron-on-primary: #1c1816;
+  --kuron-on-primary: #1a1714;
   --kuron-secondary: #d48a6a;
   --kuron-tertiary: #e0827e;
   --kuron-gold: #c8a06a;
-  --kuron-gradient-start: #2a2522;
-  --kuron-gradient-end: #221e1c;
   --kuron-reader-bg: #1a1614;
   --kuron-reader-text: #d0c8c0;
 
@@ -33,11 +29,11 @@
   --primary: var(--kuron-primary);
   --primary-foreground: var(--kuron-on-primary);
   --secondary: var(--kuron-secondary);
-  --secondary-foreground: #1c1816;
+  --secondary-foreground: #1a1714;
   --muted: var(--kuron-card-alt);
   --muted-foreground: var(--kuron-text-sub);
   --accent: var(--kuron-tertiary);
-  --accent-foreground: #1c1816;
+  --accent-foreground: #1a1714;
   --destructive: #c86858;
   --destructive-foreground: #ffd8d4;
   --success: #8ab87a;
@@ -52,20 +48,18 @@
 }
 
 [data-theme="light"] {
-  --kuron-bg: #efe6dc;
-  --kuron-surface: #f5ede4;
-  --kuron-card: #fcf7f0;
-  --kuron-card-alt: #faf3ec;
-  --kuron-border: #d6c8bc;
-  --kuron-text: #2e2722;
-  --kuron-text-sub: #7a6e66;
+  --kuron-bg: #faf7f2;
+  --kuron-surface: #f5f0e8;
+  --kuron-card: #ffffff;
+  --kuron-card-alt: #f0eae0;
+  --kuron-border: #e7ded1;
+  --kuron-text: #1c1b1a;
+  --kuron-text-sub: #8a7e6e;
   --kuron-primary: #c76a62;
-  --kuron-on-primary: #fcf7f0;
+  --kuron-on-primary: #ffffff;
   --kuron-secondary: #d48a6a;
   --kuron-tertiary: #e0827e;
   --kuron-gold: #b89060;
-  --kuron-gradient-start: #fcf7f0;
-  --kuron-gradient-end: #f5ede4;
   --kuron-reader-bg: #f5ede4;
   --kuron-reader-text: #2e2722;
 
@@ -78,59 +72,18 @@
   --primary: var(--kuron-primary);
   --primary-foreground: var(--kuron-on-primary);
   --secondary: var(--kuron-secondary);
-  --secondary-foreground: #fcf7f0;
+  --secondary-foreground: #ffffff;
   --muted: var(--kuron-card-alt);
   --muted-foreground: var(--kuron-text-sub);
   --accent: var(--kuron-tertiary);
-  --accent-foreground: #fcf7f0;
+  --accent-foreground: #ffffff;
   --destructive: #c86858;
-  --destructive-foreground: #fcf7f0;
+  --destructive-foreground: #ffffff;
   --border: var(--kuron-border);
   --input: var(--kuron-border);
   --ring: var(--kuron-primary);
 
   color-scheme: light;
-}
-
-[data-theme="amoled"] {
-  --kuron-bg: #000000;
-  --kuron-surface: #0c0a08;
-  --kuron-card: #12100e;
-  --kuron-card-alt: #161412;
-  --kuron-border: #362c28;
-  --kuron-text: #ccc4bc;
-  --kuron-text-sub: #8e847c;
-  --kuron-primary: #f1958e;
-  --kuron-on-primary: #000000;
-  --kuron-secondary: #d48a6a;
-  --kuron-tertiary: #e0827e;
-  --kuron-gold: #c8a06a;
-  --kuron-gradient-start: #12100e;
-  --kuron-gradient-end: #0c0a08;
-  --kuron-reader-bg: #000000;
-  --kuron-reader-text: #ccc4bc;
-
-  --background: var(--kuron-bg);
-  --foreground: var(--kuron-text);
-  --card: var(--kuron-card);
-  --card-foreground: var(--kuron-text);
-  --popover: var(--kuron-surface);
-  --popover-foreground: var(--kuron-text);
-  --primary: var(--kuron-primary);
-  --primary-foreground: var(--kuron-on-primary);
-  --secondary: var(--kuron-secondary);
-  --secondary-foreground: #000000;
-  --muted: var(--kuron-card-alt);
-  --muted-foreground: var(--kuron-text-sub);
-  --accent: var(--kuron-tertiary);
-  --accent-foreground: #000000;
-  --destructive: #c86858;
-  --destructive-foreground: #ffd8d4;
-  --border: var(--kuron-border);
-  --input: var(--kuron-border);
-  --ring: var(--kuron-primary);
-
-  color-scheme: dark;
 }
 
 * {
@@ -150,6 +103,11 @@ button,
 input {
   font: inherit;
   color: var(--foreground);
+}
+
+h1,
+h2 {
+  letter-spacing: -0.02em;
 }
 
 /* Manga fonts — dari kuron-mobile assets/fonts (dipakai AI translate

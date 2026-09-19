@@ -1,7 +1,7 @@
 # Kuron Desktop — Project Memory
 
-> Konteks lintas sesi & AI tools. Baca `AGENTS.md` untuk aturan kerja.
-> Port dari `shirokun20/kuron-mobile` (Flutter Android `0.9.26+36`).
+> **Unified context file** for tracking progress across AI tools.
+> Read by: **Codex** | **OpenCode** | **Manual Review**
 
 ---
 
@@ -9,65 +9,103 @@
 
 | Key | Value |
 |---|---|
-| **App** | Kuron Desktop `0.1.0` (`id.nhasix.kuron`) |
+| **App Name** | **Kuron Desktop** |
+| **Repo** | `kuron-desktop` (lokal, belum push) |
 | **Platform** | Pure desktop win+mac+linux GUI (Tauri v2) |
-| **Stack** | Rust (Tokio) + TypeScript + Vite 8 + Svelte 5.57 |
-| **Arch** | Clean: Domain <- Data, Application -> Domain, Presentation via IPC |
-| **State** | Svelte 5 runes stores (`*.svelte.ts`), ganti Cubit |
-| **DI** | `tauri::Builder::manage(AppState)` (minimal), ganti GetIt |
+| **Stack** | Rust + TypeScript + Vite 8 + Svelte 5.57 |
+| **Version** | 0.1.0 (`id.nhasix.kuron`) |
+| **Architecture** | Clean Architecture (Domain → Data → Presentation via IPC) |
+| **State Management** | Svelte 5 runes stores (`*.svelte.ts`), ganti Cubit |
+| **DI** | `tauri::Builder::manage(AppState)`, ganti GetIt |
+| **Networking** | Stub (`network.rs`) — reqwest + cookie_jar + DoH Fase 2 |
 | **Routing** | `lib/router/route.svelte.ts` (`splash` \| `main`), SvelteKit Fase 4 |
-| **Theme** | Warna Kuron exact, 3 mode (dark default / light / amoled) |
-| **Ibu** | `learn_flutter/nhasixapp` (sumber assets + DESIGN.md + pola UI) |
+| **Database** | Stub — `tauri-plugin-sql` SQLite Fase 2 |
+| **Logging** | `logger::init()` no-op — `tracing` Fase 0 lengkap |
 
-## Architecture Map
+### Related Repos
+| Repo | Role |
+|---|---|
+| `shirokun20/kuron-mobile` | Ibu: assets, DESIGN.md, pola UI (splash/main/cards) |
+| `KURON_TAURI_V2_DESKTOP.md` | Spec arsitektur → `docs/architecture.md` |
+
+### Key Features
+- Splash → Main flow (init appInfo + feed saat splash, window resize 480×700 → 1200×800)
+- App-shell NeedMCP (sidebar 256 + header 64 + tabs 44 + konten 1180)
+- Material rasa Kuron: Light/Dark solid flat-hairline (dial Linen Meridian), tag palette 12 kategori
+- Offline-first + AI translate reader (roadmap Fase 2/5, reuse Rust mobile)
+
+---
+
+## Architecture Overview
 
 ```
 src-tauri/src/
-  core/         error.rs AppError | di.rs AppState | config | constants | logger(stub)
-  domain/       entities/{hello,content,chapter,page_image_result,download_task,
-                ai_translation,glossary,search_filter,reader_settings}
-                repositories/content_repository.rs (trait sync Fase 0)
-                value_objects/{source_id,language} | services/title_parser
-  application/  usecases/{say_hello,get_home_feed}
-  data/         models/content_model | repositories MockContentRepository
-                datasources/{remote,local} stub | native/image_ops stub
-  commands/     hello_commands (cmd_hello_world, cmd_app_info)
-                content_commands (cmd_home_feed mock)
-  network.rs cache.rs stub | lib.rs manage(AppState) + 4 commands
+├── core/              # AppError, AppState DI, config, constants, logger(stub)
+├── domain/            # Pure Rust — entities, repo traits, value objects, services
+│   ├── entities/      # hello, content, chapter, page_image_result, download_task,
+│   │                  # ai_translation, glossary, search_filter, reader_settings
+│   ├── repositories/  # ContentRepository trait (sync Fase 0, async Fase 1/2)
+│   ├── value_objects/ # SourceId, Language
+│   └── services/      # title_parser
+├── application/       # UseCases — 1 file 1 execute (say_hello, get_home_feed)
+├── data/              # MockContentRepository + stub Fase 2/3
+│   ├── models/        # ContentModel (From Entity)
+│   ├── datasources/   # remote (scraper adapters) + local (sqlite/kv/file) stub
+│   ├── repositories/  # mock impl
+│   └── native/        # image_ops stub (port kuron_native/rust Fase 3)
+├── commands/          # Thin IPC: cmd_hello_world, cmd_app_info, cmd_home_feed
+├── network.rs         # HttpClientManager stub (Fase 2)
+└── cache.rs           # ImageCache stub (Fase 2)
+
 src/lib/
-  api/client.ts | domain/types.ts (manual, ts-rs nyusul)
-  stores/{hello,content,theme}.svelte.ts | router/route.svelte.ts
-  theme/tokens.ts | components/{TagChip,MainGridCard,MainFeaturedCard}
-  pages/{SplashScreen,MainPage}
-src/assets/     icons/{logo_app,frame}.webp | fonts/{Komika,Bangers,KosugiMaru,ComicNeue}
+├── api/               # client.ts (typed invoke) + window.ts (resize)
+├── domain/            # types.ts mirror Rust (ts-rs generate nyusul ADR-004)
+├── stores/            # hello, content, theme (runes, ganti Cubit/Bloc)
+├── router/            # route.svelte.ts, SvelteKit Fase 4
+├── theme/             # tokens.ts (port colors/design_tokens/tag palette 1:1)
+├── components/        # Sidebar, TagChip, MainGridCard, MainFeaturedCard
+└── pages/             # SplashScreen, MainPage
 ```
 
-## Progress
+### Layer Rules
+- **Domain**: Pure Rust + `serde` only. Zero deps ke Data/Presentation/Tauri.
+- **Data**: Depends only on Domain. Mock sekarang, remote/local real Fase 2.
+- **Application**: Depends only on Domain. Satu use case = satu file + `execute`.
+- **Presentation**: Svelte via `invoke('cmd_*')` only. Commands thin, `AppError -> String` di boundary.
 
-- [x] Fase 0a: hello world IPC (`cmd_hello_world`, `cmd_app_info`)
-- [x] Frontend Svelte + tema Kuron + tag palette + fonts manga
-- [x] Assets dari nhasixapp (logo, frame, 4 fonts)
-- [x] Struktur clean-arch Rust penuh (mock repo, stub Fase 2/3)
-- [x] Splash -> Main flow (SplashScreen init appInfo+feed, route store)
-- [x] AGENTS.md + MEMORY.md
-- [ ] Fase 0 lengkap: tracing, AppState DI Arc<dyn>, CI matrix 3 OS
-- [ ] Fase 1: entities penuh + ts-rs generate types.ts
-- [ ] Fase 2: scraper adapters, SQLite, reqwest+DoH, image cache
-- [ ] Fase 3: image_ops + ort bubble_detector port
-- [ ] Fase 4: SvelteKit + Home/Search/Detail real
-- [ ] Fase 5: Reader canvas + TranslationOverlay polygon + draw mode
+---
 
-## Tech Debt (sadar, tercatat)
+## Current Progress Dashboard
 
-1. `MockContentRepository` fixture 8 item — ganti real Fase 2.
-2. Repo traits **sync** — jadi async + `Arc<dyn>` bareng SQLite Fase 1/2.
-3. `logger::init()` no-op — `tracing` subscriber Fase 0 lengkap.
-4. `KosugiMaru.ttf` 3.5MB di bundle — pertimbangkan subset/lazy-load Fase 8.
-5. SPA + route store manual — SvelteKit Fase 4.
+> Tracked via `openspec/` — Last updated: 2026-09-19
 
-## Conventions
+### Archived (in `openspec/changes/archive/`)
+- *(none — openspec belum dipakai, semua di Recent Sessions)*
 
-- Rust: `snake_case` file/fn, `cmd_` prefix commands, `AppError -> String` di boundary.
-- Svelte: runes (`$state/$derived`), stores class di `*.svelte.ts`, style scoped per komponen.
-- Warna: selalu dari `tokens.ts` / var CSS, never hardcode hex di komponen.
-- Card: flat + 1px border (`DESIGN.md`: elevation 0), radius 16.
+### Active Changes (in `openspec/changes/`)
+- *(none)*
+
+### Open Issues (tech debt tercatat, sadar)
+- `MockContentRepository` fixture 8 item — ganti real Fase 2
+- Repo traits **sync** — jadi async + `Arc<dyn>` bareng SQLite Fase 1/2
+- `logger::init()` no-op — `tracing` subscriber Fase 0 lengkap
+- `KosugiMaru.ttf` 3.5MB di bundle — subset/lazy-load Fase 8
+- SPA + route store manual — SvelteKit Fase 4
+- CI matrix 3 OS + signing/updater — Fase 0 lengkap
+
+---
+
+### Recent Sessions
+
+> Session log in this table. Last updated: 2026-09-19.
+
+| Date | Tool | Topic | Status | Detail |
+|---|---|---|---|---|
+| 2026-09-19 | OpenCode | MEMORY format mirror kuron-mobile | Done | Struktur disamakan: Identity + Related Repos + Key Features, Architecture Overview (2 tree) + Layer Rules, Progress Dashboard (openspec kosong → debt di Open Issues), Recent Sessions. RTK section mobile tidak dibawa (tooling khusus mobile). |
+| 2026-09-19 | OpenCode | Tema Linen Meridian 2-mode, hapus amoled + gradient | Done | NeedMCP `linen-meridian` token light+dark (Zen Season token kosong). Surfaces/text/border diadopsi, primary tetap coral Kuron. Amoled dihapus (store/CSS/token). Semua gradient → flat solid + hairline (no AI slop). Tracking heading -0.02em. | Struktur disamakan: Identity + Related Repos + Key Features, Architecture Overview (2 tree) + Layer Rules, Progress Dashboard (openspec kosong → debt di Open Issues), Recent Sessions. RTK section mobile tidak dibawa (tooling khusus mobile). |
+| 2026-09-19 | OpenCode | NeedMCP wireframe app-shell (Yoru Sumi) | Done | Style `yoru-sumi` locked (guest, per-call slug). Wireframe `gaming-store-catalog` JSON → `Sidebar` 256 + header 64 + tabs 44 + konten 1180 di `MainPage`. Styling 100% token Kuron (directive: struktur saja). `pnpm check` 0/0, build OK. |
+| 2026-09-19 | OpenCode | Liquid Glass coba + revert ke solid | Done | Transparent window + blur/saturate panel ala glass di semua kartu; user: jelek → revert total ke solid Kuron. `.pen` tak terbaca (Pencil MCP transport fail); NeedMCP dikonfirmasi component library (butuh API key), bukan .pen reader. Tema sementara: Solid Kuron. |
+| 2026-09-19 | OpenCode | Icon Kuron + window resize + logo fit | Done | `frame.webp` 1536 → `app-icon.png` 1024 → `pnpm tauri icon` regen `src-tauri/icons/` (icns/ico/png). Hapus `tauri.svg` sisa template + favicon. Icon dock macOS: binary embed saat compile → `touch build.rs` + recompile. Splash logo gepeng (900×600 dipaksa kotak) → `height:auto`; ring lingkaran → rounded-rect → dihapus; splash kecil (logo 120) grow 1.4× + window 480×700 → 1200×800 saat ke main (`lib/api/window.ts`, capability window). |
+| 2026-09-19 | OpenCode | Assets + clean arch + splash→main + AGENTS/MEMORY | Done | Copy `logo_app.webp`, `frame.webp`, 4 fonts manga dari `learn_flutter/nhasixapp`. Rust: core/domain/application/data/commands/network/cache + `cmd_home_feed` mock. Frontend: route store, `SplashScreen` (logo glow, steps, progress, dots), `MainPage` (featured + grid + backend status), `TagChip`, font-face. `AGENTS.md` + `MEMORY.md` awal. `cargo test` 3 pass. |
+| 2026-09-19 | OpenCode | Svelte scaffold + tema Kuron exact | Done | Vite 8 + Svelte 5.57 + TS 5.9 (downgrade dari 7, svelte-check ≤6). `tokens.ts` port `colors_const`/`design_tokens`/`tag_color_palette` 1:1; `app.css` var `--kuron-*` + alias shadcn; switcher dark/light/amoled. `spec KURON_TAURI_V2_DESKTOP.md` → `docs/architecture.md`. |
+| 2026-09-19 | OpenCode | Hello world clean-arch init | Done | `core/error` + `domain/entities/hello` + `usecase say_hello` + `cmd_hello_world`/`cmd_app_info`; frontend vanilla `client.js`. Fix `generate_handler!` tolak path → `use` import. `cargo test` 2 pass. |

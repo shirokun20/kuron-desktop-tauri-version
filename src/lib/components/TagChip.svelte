@@ -1,6 +1,6 @@
 <script lang="ts">
   // TagChip — port `TagChip` + `tag_color_palette` kuron-mobile.
-  // Warna theme-aware: dark/amoled pakai palet dark, light pakai palet light.
+  // Warna theme-aware: dark pakai palet dark, light pakai palet light.
   import { tagColor } from "../theme/tokens";
   import { themeStore } from "../stores/theme.svelte";
 

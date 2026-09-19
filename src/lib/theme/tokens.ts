@@ -4,7 +4,7 @@
 //   lib/core/utils/tag_color_palette.dart (12 kategori tag)
 // Sumber: https://github.com/shirokun20/kuron-mobile/blob/master/DESIGN.md
 
-export type KuronThemeMode = "light" | "dark" | "amoled";
+export type KuronThemeMode = "light" | "dark";
 
 export interface KuronTheme {
   bg: string;
@@ -14,8 +14,6 @@ export interface KuronTheme {
   border: string;
   text: string;
   textSub: string;
-  gradientStart: string;
-  gradientEnd: string;
   readerBg: string;
   readerText: string;
 }
@@ -41,43 +39,26 @@ export const status = {
 export const themes: Record<KuronThemeMode, KuronTheme> = {
   // default Kuron = dark
   dark: {
-    bg: "#1C1816",
-    surface: "#221E1C",
-    card: "#2A2522",
-    cardAlt: "#2E2926",
-    border: "#4A3D36",
-    text: "#D4CCC4",
-    textSub: "#9E948C",
-    gradientStart: "#2A2522",
-    gradientEnd: "#221E1C",
+    bg: "#1A1714",
+    surface: "#292420",
+    card: "#332C26",
+    cardAlt: "#221E1A",
+    border: "#3E362E",
+    text: "#F5EFE6",
+    textSub: "#A89C8C",
     readerBg: "#1A1614",
     readerText: "#D0C8C0",
   },
   light: {
-    bg: "#EFE6DC",
-    surface: "#F5EDE4",
-    card: "#FCF7F0",
-    cardAlt: "#FAF3EC",
-    border: "#D6C8BC",
-    text: "#2E2722",
-    textSub: "#7A6E66",
-    gradientStart: "#FCF7F0",
-    gradientEnd: "#F5EDE4",
+    bg: "#FAF7F2",
+    surface: "#F5F0E8",
+    card: "#FFFFFF",
+    cardAlt: "#F0EAE0",
+    border: "#E7DED1",
+    text: "#1C1B1A",
+    textSub: "#8A7E6E",
     readerBg: "#F5EDE4",
     readerText: "#2E2722",
-  },
-  amoled: {
-    bg: "#000000",
-    surface: "#0C0A08",
-    card: "#12100E",
-    cardAlt: "#161412",
-    border: "#362C28",
-    text: "#CCC4BC",
-    textSub: "#8E847C",
-    gradientStart: "#12100E",
-    gradientEnd: "#0C0A08",
-    readerBg: "#000000",
-    readerText: "#CCC4BC",
   },
 };
 
@@ -162,7 +143,7 @@ function stableHash(value: string): number {
   return hash;
 }
 
-/** Tag -> warna, theme-aware. `darkMode` true untuk dark/amoled. */
+/** Tag -> warna, theme-aware. `darkMode` true untuk mode dark. */
 export function tagColor(tagType: string, darkMode: boolean): string {
   const fixed = darkMode ? tagDark : tagLight;
   const fallback = darkMode ? fallbackDark : fallbackLight;

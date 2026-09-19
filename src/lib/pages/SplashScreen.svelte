@@ -6,6 +6,7 @@
   import { contentStore } from "../stores/content.svelte";
   import { helloStore } from "../stores/hello.svelte";
   import { routeStore } from "../router/route.svelte";
+  import { setMainSize, setSplashSize } from "../api/window";
 
   const STEPS = [
     "Menyiapkan komponen…",
@@ -15,6 +16,7 @@
   ];
 
   let step = $state(0);
+  let growing = $state(false);
   let progress = $derived(Math.min(1, (step + 1) / STEPS.length));
   let timers: ReturnType<typeof setTimeout>[] = [];
 
@@ -22,19 +24,25 @@
     // init beneran: app info + feed dimuat saat splash (ala SplashBloc)
     helloStore.loadInfo();
     contentStore.load();
+    setSplashSize();
 
     STEPS.forEach((_, i) => {
       timers.push(setTimeout(() => (step = i), 350 * (i + 1)));
     });
-    timers.push(setTimeout(() => routeStore.go("main"), 350 * STEPS.length + 400));
+    // logo membesar + window melebar sesaat sebelum pindah main
+    timers.push(setTimeout(() => (growing = true), 350 * STEPS.length));
+    timers.push(
+      setTimeout(async () => {
+        await setMainSize();
+        routeStore.go("main");
+      }, 350 * STEPS.length + 450),
+    );
     return () => timers.forEach(clearTimeout);
   });
 </script>
 
 <div class="splash">
-  <div class="logo-ring">
-    <img src={logo} alt="Kuron" width="160" height="160" />
-  </div>
+  <img class="logo" class:grow={growing} src={logo} alt="Kuron" />
   <h1>Kuron</h1>
   <p class="subtitle">Desktop reader — privacy-first, offline-ready</p>
 
@@ -64,16 +72,14 @@
     text-align: center;
     padding: 24px;
   }
-  .logo-ring {
-    padding: 20px;
-    border-radius: 50%;
-    border: 2px solid color-mix(in srgb, var(--kuron-primary) 30%, transparent);
-    box-shadow: 0 0 30px 4px color-mix(in srgb, var(--kuron-primary) 20%, transparent);
-    background: color-mix(in srgb, var(--popover) 30%, transparent);
-  }
-  .logo-ring img {
+  .logo {
     display: block;
-    border-radius: 24px;
+    width: 120px;
+    height: auto;
+    transition: transform 450ms ease;
+  }
+  .logo.grow {
+    transform: scale(1.4);
   }
   h1 {
     margin: 32px 0 4px;

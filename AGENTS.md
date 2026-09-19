@@ -39,8 +39,8 @@ Presentation (Svelte) -> Application (Rust) -> Domain <- Data (Rust)
 
 Warna Kuron exact dari kuron-mobile (`DESIGN.md`, `colors_const.dart`).
 Token di `src/lib/theme/tokens.ts`, var CSS `--kuron-*` + alias shadcn di
-`src/app.css`. Jangan pakai warna default shadcn/Tailwind. Mode: dark
-(default) | light | amoled via `<html data-theme>`.
+`src/app.css`. Jangan pakai warna default shadcn/Tailwind. Mode: light | dark
+(default) via `<html data-theme>`.
 
 ## 📁 Struktur
 

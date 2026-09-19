@@ -3,7 +3,7 @@
 import type { KuronThemeMode } from "../theme/tokens";
 
 const KEY = "kuron-theme";
-const MODES: KuronThemeMode[] = ["light", "dark", "amoled"];
+const MODES: KuronThemeMode[] = ["light", "dark"];
 
 function initial(): KuronThemeMode {
   const saved = localStorage.getItem(KEY);
@@ -14,7 +14,7 @@ function initial(): KuronThemeMode {
 
 class ThemeStore {
   mode = $state<KuronThemeMode>(initial());
-  darkMode = $derived(this.mode !== "light");
+  darkMode = $derived(this.mode === "dark");
 
   constructor() {
     this.apply(this.mode);
