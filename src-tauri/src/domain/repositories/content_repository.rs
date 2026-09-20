@@ -12,7 +12,7 @@ use crate::{
 
 #[async_trait]
 pub trait HomeFeedRepository: Send + Sync {
-    async fn home_feed(&self) -> Result<Vec<Content>, AppError>;
+    async fn home_feed(&self, page: u32) -> Result<Vec<Content>, AppError>;
 }
 
 #[async_trait]
@@ -30,8 +30,8 @@ pub trait ContentRepository: HomeFeedRepository {
 /// bisa dipakai langsung oleh use case generik.
 #[async_trait]
 impl<R: HomeFeedRepository + ?Sized> HomeFeedRepository for Arc<R> {
-    async fn home_feed(&self) -> Result<Vec<Content>, AppError> {
-        (**self).home_feed().await
+    async fn home_feed(&self, page: u32) -> Result<Vec<Content>, AppError> {
+        (**self).home_feed(page).await
     }
 }
 

@@ -5,7 +5,15 @@ export type Hello = { name: string, message: string, };
 
 export type AppInfo = { name: string, version: string, backend: string, };
 
-export type Content = { id: string, title: string, cover_url: string, source_id: string, upload_date: string | null, is_favorite: boolean, };
+export type Content = { id: string, title: string, cover_url: string, source_id: string, upload_date: string | null, is_favorite: boolean, 
+/**
+ * Jumlah halaman (badge kartu); None = tak diketahui sumber ini.
+ */
+page_count: number | null, 
+/**
+ * Kode bahasa ISO (en/ja/zh/id); None = tak diketahui.
+ */
+language: string | null, };
 
 export type Chapter = { id: string, content_id: string, title: string, order: number, is_external: boolean, external_url: string | null, };
 
@@ -30,4 +38,12 @@ export type GlossaryEntry = { source: string, target: string, };
 export type SourceId = string;
 
 export type Language = "En" | "Id" | "Zh" | { "Other": string };
+
+export type InstalledSource = { id: string, version: string, base_url: string, installed: boolean, icon_url: string | null, };
+
+export type ExtensionManifest = { schemaVersion: number, minimumAppVersion: string, installableSources: Array<ManifestEntry>, };
+
+export type ManifestEntry = { id: string, version: string, url: string, meta: ManifestMeta | null, checksum: string, };
+
+export type ManifestMeta = { displayName: string, description: string, contentType: string, language: string, sizeKb: number, iconUrl: string | null, };
 

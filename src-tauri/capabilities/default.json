@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "source-picker", "about"],
+  "windows": ["main", "source-picker", "about", "extension-manager"],
   "permissions": [
     "core:default",
     "core:event:allow-emit",
@@ -13,6 +13,7 @@
     "core:window:allow-create",
     "core:window:allow-set-size",
     "core:window:allow-set-min-size",
-    "opener:default"
+    "opener:default",
+    "dialog:allow-open"
   ]
 }

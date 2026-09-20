@@ -12,6 +12,10 @@ pub struct ContentModel {
     pub cover_url: String,
     pub source_id: String,
     pub upload_date: Option<String>,
+    #[serde(default)]
+    pub page_count: Option<u32>,
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 impl From<ContentModel> for Content {
@@ -23,6 +27,8 @@ impl From<ContentModel> for Content {
             source_id: m.source_id,
             upload_date: m.upload_date,
             is_favorite: false,
+            page_count: m.page_count,
+            language: m.language,
         }
     }
 }
@@ -35,6 +41,8 @@ impl From<Content> for ContentModel {
             cover_url: e.cover_url,
             source_id: e.source_id,
             upload_date: e.upload_date,
+            page_count: e.page_count,
+            language: e.language,
         }
     }
 }

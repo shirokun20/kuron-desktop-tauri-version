@@ -15,9 +15,9 @@ async function current(): Promise<Window | null> {
 }
 
 export async function setSplashSize(): Promise<void> {
-  const win = await current();
-  if (!win) return;
   try {
+    const win = await current();
+    if (!win) return;
     await win.setMinSize(null);
     await win.setSize(new LogicalSize(SPLASH.w, SPLASH.h));
     await win.center();
@@ -27,9 +27,9 @@ export async function setSplashSize(): Promise<void> {
 }
 
 export async function setMainSize(): Promise<void> {
-  const win = await current();
-  if (!win) return;
   try {
+    const win = await current();
+    if (!win) return;
     await win.setSize(new LogicalSize(MAIN.w, MAIN.h));
     await win.center();
   } catch {
@@ -104,4 +104,9 @@ export function openSourcePicker(): Promise<string | null> {
 /** Popup window native "Tentang Kuron". Fokuskan bila sudah ada. */
 export function openAboutWindow(): Promise<string | null> {
   return openPopup("about", "#about", "Tentang Kuron", 560, 800);
+}
+
+/** Popup window native "Ekstensi". Fokuskan bila sudah ada. */
+export function openExtensionManager(): Promise<string | null> {
+  return openPopup("extension-manager", "#extensions", "Ekstensi", 560, 720);
 }

@@ -6,6 +6,8 @@ use ts_rs::TS;
 
 use crate::{
     commands::AppInfo,
+    core::InstalledSource,
+    data::datasources::extension::{ExtensionManifest, ManifestEntry, ManifestMeta},
     domain::{
         BubbleBox, Chapter, Content, DownloadState, DownloadTask, GlossaryEntry, Hello,
         Language, PageImageResult, PageTranslation, ReaderSettings, ReadingMode,
@@ -32,6 +34,10 @@ fn export_types_ts() {
         GlossaryEntry::decl(&cfg),
         SourceId::decl(&cfg),
         Language::decl(&cfg),
+        InstalledSource::decl(&cfg),
+        ExtensionManifest::decl(&cfg),
+        ManifestEntry::decl(&cfg),
+        ManifestMeta::decl(&cfg),
     ];
 
     let mut out = String::from(
@@ -50,4 +56,6 @@ fn export_types_ts() {
     assert!(out.contains("type Content ="));
     assert!(out.contains("type Hello ="));
     assert!(out.contains("type AppInfo ="));
+    assert!(out.contains("type InstalledSource ="));
+    assert!(out.contains("type ExtensionManifest ="));
 }

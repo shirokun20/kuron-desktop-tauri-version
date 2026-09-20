@@ -7,5 +7,5 @@ pub mod di;
 pub mod error;
 pub mod logger;
 
-pub use di::AppState;
+pub use di::{AppState, InstalledSource};
 pub use error::AppError;

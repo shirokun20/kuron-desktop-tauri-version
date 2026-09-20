@@ -5,6 +5,7 @@
   import logo from "../../assets/icons/logo_app.webp";
   import { contentStore } from "../stores/content.svelte";
   import { helloStore } from "../stores/hello.svelte";
+  import { sourceStore } from "../stores/source.svelte";
   import { routeStore } from "../router/route.svelte";
   import { setMainSize, setSplashSize } from "../api/window";
 
@@ -19,11 +20,27 @@
   let growing = $state(false);
   let progress = $derived(Math.min(1, (step + 1) / STEPS.length));
   let timers: ReturnType<typeof setTimeout>[] = [];
+  let err = $state<string | null>(null);
+
+  function goMain() {
+    try {
+      routeStore.go("main");
+    } catch (e) {
+      err = `navigasi gagal: ${e}`;
+    }
+  }
 
   onMount(() => {
-    // init beneran: app info + feed dimuat saat splash (ala SplashBloc)
-    helloStore.loadInfo();
-    contentStore.load();
+    // init beneran: sumber → app info + feed dimuat saat splash (ala SplashBloc)
+    (async () => {
+      try {
+        await sourceStore.load();
+        helloStore.loadInfo();
+        contentStore.load(sourceStore.current === "semua" ? undefined : sourceStore.current);
+      } catch (e) {
+        err = `init gagal: ${e}`;
+      }
+    })();
     setSplashSize();
 
     STEPS.forEach((_, i) => {
@@ -32,11 +49,16 @@
     // logo membesar + window melebar sesaat sebelum pindah main
     timers.push(setTimeout(() => (growing = true), 350 * STEPS.length));
     timers.push(
-      setTimeout(async () => {
-        await setMainSize();
-        routeStore.go("main");
+      setTimeout(() => {
+        // Resize jalan async tanpa ditunggu; navigasi DIJAMIN (bug: stuck 100%).
+        setMainSize().catch(() => {
+          // abaikan, lanjut ke main
+        });
+        goMain();
       }, 350 * STEPS.length + 450),
     );
+    // Cadangan: paksa pindah bila timer utama gagal (thread block dsb).
+    timers.push(setTimeout(goMain, 350 * STEPS.length + 4000));
     return () => timers.forEach(clearTimeout);
   });
 </script>
@@ -58,6 +80,9 @@
   </div>
   {#if helloStore.info}
     <p class="ver">{helloStore.info.name} v{helloStore.info.version}</p>
+  {/if}
+  {#if err}
+    <p class="err">{err}</p>
   {/if}
 </div>
 
@@ -136,5 +161,11 @@
     color: var(--muted-foreground);
     font-size: 12px;
     margin-top: 24px;
+  }
+  .err {
+    color: var(--destructive);
+    font-size: 13px;
+    margin-top: 12px;
+    max-width: 420px;
   }
 </style>

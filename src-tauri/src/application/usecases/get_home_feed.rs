@@ -15,8 +15,8 @@ impl<R: HomeFeedRepository> GetHomeFeedUseCase<R> {
         Self { repo }
     }
 
-    pub async fn execute(&self) -> Result<Vec<Content>, AppError> {
-        self.repo.home_feed().await
+    pub async fn execute(&self, page: u32) -> Result<Vec<Content>, AppError> {
+        self.repo.home_feed(page).await
     }
 }
 
@@ -29,7 +29,7 @@ mod tests {
     fn serves_mock_feed_via_arc_dyn() {
         let repo: std::sync::Arc<dyn HomeFeedRepository> =
             std::sync::Arc::new(MockContentRepository);
-        let feed = tauri::async_runtime::block_on(GetHomeFeedUseCase::new(repo).execute())
+        let feed = tauri::async_runtime::block_on(GetHomeFeedUseCase::new(repo).execute(1))
             .unwrap();
         assert_eq!(feed.len(), 8);
     }

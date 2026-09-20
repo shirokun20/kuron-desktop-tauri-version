@@ -11,6 +11,12 @@ pub struct Content {
     pub source_id: String,
     pub upload_date: Option<String>,
     pub is_favorite: bool,
+    /// Jumlah halaman (badge kartu); None = tak diketahui sumber ini.
+    #[serde(default)]
+    pub page_count: Option<u32>,
+    /// Kode bahasa ISO (en/ja/zh/id); None = tak diketahui.
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 impl Content {
@@ -24,6 +30,8 @@ impl Content {
                 source_id: "nhentai".to_string(),
                 upload_date: None,
                 is_favorite: false,
+                page_count: None,
+                language: None,
             })
             .collect()
     }

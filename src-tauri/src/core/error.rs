@@ -6,13 +6,18 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 pub enum AppError {
     Validation(String),
+    Network(String),
+    Storage(String),
     Internal(String),
 }
 
 impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Validation(m) | Self::Internal(m) => write!(f, "{m}"),
+            Self::Validation(m)
+            | Self::Network(m)
+            | Self::Storage(m)
+            | Self::Internal(m) => write!(f, "{m}"),
         }
     }
 }
@@ -20,5 +25,23 @@ impl std::fmt::Display for AppError {
 impl From<AppError> for String {
     fn from(e: AppError) -> Self {
         e.to_string()
+    }
+}
+
+impl From<reqwest::Error> for AppError {
+    fn from(e: reqwest::Error) -> Self {
+        Self::Network(e.to_string())
+    }
+}
+
+impl From<rusqlite::Error> for AppError {
+    fn from(e: rusqlite::Error) -> Self {
+        Self::Storage(e.to_string())
+    }
+}
+
+impl From<std::io::Error> for AppError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Storage(e.to_string())
     }
 }

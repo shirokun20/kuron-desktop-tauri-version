@@ -6,7 +6,11 @@ pub mod data;
 pub mod domain;
 pub mod network;
 
-use commands::{cmd_app_info, cmd_hello_world, cmd_home_feed};
+use commands::{
+    cmd_app_info, cmd_extension_install, cmd_extension_install_zip_file, cmd_extension_install_zip_url,
+    cmd_extension_manifest, cmd_extension_uninstall, cmd_get_chapters, cmd_get_detail,
+    cmd_get_page_images, cmd_hello_world, cmd_home_feed, cmd_search, cmd_sources_list,
+};
 use core::{logger, AppState};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
@@ -25,6 +29,7 @@ pub fn run() {
     logger::init();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
         .setup(|app| {
             let app_menu = Submenu::with_items(
@@ -165,7 +170,17 @@ pub fn run() {
             greet,
             cmd_hello_world,
             cmd_app_info,
-            cmd_home_feed
+            cmd_home_feed,
+            cmd_search,
+            cmd_get_detail,
+            cmd_get_chapters,
+            cmd_get_page_images,
+            cmd_sources_list,
+            cmd_extension_manifest,
+            cmd_extension_install,
+            cmd_extension_uninstall,
+            cmd_extension_install_zip_file,
+            cmd_extension_install_zip_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

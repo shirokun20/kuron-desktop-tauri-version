@@ -6,4 +6,4 @@ pub mod models;
 pub mod native;
 pub mod repositories;
 
-pub use repositories::content_repository_impl::MockContentRepository;
+pub use repositories::content_repository_impl::{ContentRepositoryImpl, MockContentRepository};

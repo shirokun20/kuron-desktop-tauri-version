@@ -7,12 +7,14 @@
 
   interface Props {
     sources: SourceMeta[];
+    /** id sumber aktif. */
     active: string;
-    onSelect: (label: string) => void;
+    onSelect: (id: string) => void;
   }
 
   let { sources, active, onSelect }: Props = $props();
   let query = $state("");
+  let iconFailed = $state<Record<string, boolean>>({});
   let filtered = $derived(
     sources.filter((s) =>
       `${s.label} ${s.id}`.toLowerCase().includes(query.trim().toLowerCase()),
@@ -31,10 +33,22 @@
 
 <div class="list">
   {#each filtered as s (s.id)}
-    {@const selected = active === s.label}
+    {@const selected = active === s.id}
     {@const tint = tagColor(s.id, themeStore.darkMode)}
-    <button class="row" class:selected onclick={() => onSelect(s.label)}>
-      <span class="tile" style:--tint={tint}>{s.label.slice(0, 2).toUpperCase()}</span>
+    <button class="row" class:selected onclick={() => onSelect(s.id)}>
+      <span class="tile" style:--tint={tint}>
+        {#if s.iconUrl && !iconFailed[s.id]}
+          <img
+            src={s.iconUrl}
+            alt=""
+            loading="lazy"
+            referrerpolicy="no-referrer"
+            onerror={() => (iconFailed[s.id] = true)}
+          />
+        {:else}
+          {s.label.slice(0, 2).toUpperCase()}
+        {/if}
+      </span>
       <span class="info">
         <strong class:selected>{s.label}</strong>
         <small>{s.id} • {s.version}</small>
@@ -113,6 +127,12 @@
     color: var(--tint);
     font-weight: 800;
     font-size: 15px;
+    overflow: hidden;
+  }
+  .tile img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
   .info {
     flex: 1;

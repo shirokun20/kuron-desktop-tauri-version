@@ -5,7 +5,7 @@
   import { contentStore } from "../stores/content.svelte";
   import { helloStore } from "../stores/hello.svelte";
   import { sourceStore } from "../stores/source.svelte";
-  import { openAboutWindow } from "../api/window";
+  import { openAboutWindow, openExtensionManager } from "../api/window";
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import Sidebar from "../components/Sidebar.svelte";
@@ -21,6 +21,7 @@
     heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20.5C7 16.5 3 13.2 3 9.3 3 6.4 5.2 4.5 7.7 4.5c1.7 0 3.3.9 4.3 2.4 1-1.5 2.6-2.4 4.3-2.4 2.5 0 4.7 1.9 4.7 4.8 0 3.9-4 7.2-9 11.2Z"/></svg>',
     settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z"/></svg>',
     info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
+    ext: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 7V5a2 2 0 0 0-4 0v2H7a2 2 0 0 0-2 2v3h2a2 2 0 1 1 0 4H5v3a2 2 0 0 0 2 2h3v-2a2 2 0 1 1 4 0v2h3a2 2 0 0 0 2-2v-3h-2a2 2 0 1 1 0-4h2V9a2 2 0 0 0-2-2h-3Z"/></svg>',
   };
 
   const GROUPS = [
@@ -43,6 +44,7 @@
       label: "MORE",
       items: [
         { id: "settings", label: "Pengaturan", icon: ICONS.settings },
+        { id: "extensions", label: "Ekstensi", icon: ICONS.ext },
         { id: "about", label: "Tentang", icon: ICONS.info },
       ],
     },
@@ -52,8 +54,6 @@
   let collapsed = $state(false);
   let name = $state("");
   let navError = $state<string | null>(null);
-  let featured = $derived(contentStore.feed[0] ?? null);
-  let rest = $derived(contentStore.feed.slice(1));
   let version = $derived(helloStore.info?.version ?? "0.1.0");
 
   function submit(e: SubmitEvent) {
@@ -61,10 +61,14 @@
     helloStore.sayHello(name);
   }
 
-  // "Tentang" buka popup window native (bukan ganti konten main).
+  // "Tentang"/"Ekstensi" buka popup window native (bukan ganti konten main).
   async function selectNav(id: string) {
     if (id === "about") {
       navError = await openAboutWindow();
+      return;
+    }
+    if (id === "extensions") {
+      navError = await openExtensionManager();
       return;
     }
     navError = null;
@@ -79,6 +83,11 @@
       // mode browser: event Tauri tidak ada
     });
   });
+
+  // Feed ikut sumber aktif (termasuk hasil install ekstensi).
+  $effect(() => {
+    contentStore.load(sourceStore.current);
+  });
 </script>
 
 <div class="shell">
@@ -86,7 +95,7 @@
     groups={GROUPS}
     active={activeNav}
     {collapsed}
-    source={sourceStore.current}
+    source={sourceStore.currentLabel}
     {version}
     onSelect={selectNav}
     onToggle={() => (collapsed = !collapsed)}
@@ -114,16 +123,29 @@
         <p class="err">{contentStore.error}</p>
       {/if}
 
-      {#if featured}
-        <MainFeaturedCard content={featured} />
+      {#if contentStore.feed.length > 0}
+        <MainFeaturedCard items={contentStore.feed} />
       {/if}
 
       <section>
         <h2>Terbaru</h2>
         <div class="grid">
-          {#each rest as item (item.id)}
+          {#each contentStore.feed as item (item.id)}
             <MainGridCard content={item} />
           {/each}
+        </div>
+        <div class="pager">
+          {#if contentStore.hasMore}
+            <button
+              class="more"
+              onclick={() => contentStore.loadMore()}
+              disabled={contentStore.loadingMore}
+            >
+              {contentStore.loadingMore ? "Memuat…" : "Muat lebih banyak"}
+            </button>
+          {:else if contentStore.feed.length > 0}
+            <p class="muted">Semua sudah dimuat.</p>
+          {/if}
         </div>
       </section>
 
@@ -219,6 +241,28 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 12px;
+  }
+  .pager {
+    display: flex;
+    justify-content: center;
+    padding: 20px 0 8px;
+  }
+  .more {
+    padding: 10px 28px;
+    border-radius: 999px;
+    border: 1px solid var(--primary);
+    background: transparent;
+    color: var(--primary);
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .more:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+  .more:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
   }
   .card {
     border: 1px solid var(--border);

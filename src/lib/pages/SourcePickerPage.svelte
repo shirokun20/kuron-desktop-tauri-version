@@ -3,15 +3,20 @@
   // Pilih → emit 'source-selected' ke window main → tutup diri.
   import { emit } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { SOURCE_META, sourceStore } from "../stores/source.svelte";
+  import { onMount } from "svelte";
+  import { sourceStore } from "../stores/source.svelte";
   import SourceList from "../components/SourceList.svelte";
 
   let err = $state<string | null>(null);
 
-  async function pick(label: string) {
-    sourceStore.select(label);
+  onMount(() => {
+    sourceStore.load();
+  });
+
+  async function pick(id: string) {
+    sourceStore.select(id);
     try {
-      await emit("source-selected", label);
+      await emit("source-selected", id);
     } catch (e) {
       err = `emit gagal: ${e}`;
     }
@@ -28,7 +33,10 @@
     <h1>Sumber</h1>
     <p>Ganti provider untuk feed, detail, pencarian, dan data reader.</p>
   </header>
-  <SourceList sources={SOURCE_META} active={sourceStore.current} onSelect={pick} />
+  <SourceList sources={sourceStore.available} active={sourceStore.current} onSelect={pick} />
+  {#if sourceStore.error}
+    <p class="err">{sourceStore.error}</p>
+  {/if}
   {#if err}
     <p class="err">{err}</p>
   {/if}
