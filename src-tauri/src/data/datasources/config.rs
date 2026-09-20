@@ -97,6 +97,12 @@ pub struct SourceFile {
     pub network: Option<NetworkSection>,
     #[serde(default)]
     pub scraper: Option<ScraperSection>,
+    /// Navigasi tap-tag (`navigation.tagQueryMapping`) — Value per perlu.
+    #[serde(default)]
+    pub navigation: serde_json::Value,
+    /// Definisi form cari per-sumber (`searchForm` config) — Value per perlu.
+    #[serde(default, rename = "searchForm")]
+    pub search_form: serde_json::Value,
     #[serde(default, rename = "assetHosts")]
     pub asset_hosts: HashMap<String, String>,
 }
@@ -271,7 +277,7 @@ pub fn fill_url(template: &str, params: &[(&str, &str)]) -> String {
     strip_empty_params(&url, &emptied)
 }
 
-fn encode_query(v: &str) -> String {
+pub(crate) fn encode_query(v: &str) -> String {
     let mut out = String::with_capacity(v.len());
     for b in v.bytes() {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {

@@ -10,7 +10,7 @@ use scraper::{Html, Selector};
 use crate::{
     core::AppError,
     data::{
-        datasources::config::{fill_url, SourceFile},
+        datasources::config::{encode_query, fill_url, SourceFile},
         models::ContentModel,
     },
     domain::Chapter,
@@ -278,8 +278,97 @@ impl SourceConfig {
         format!("{}{}", self.base_url, path)
     }
 
-    pub fn detail_url(&self, id_or_url: &str) -> String {
-        if id_or_url.starts_with("http://") || id_or_url.starts_with("https://") {
+    /// URL search dari payload `raw:k=v&..` (mobile `_searchRaw` disederhanakan):
+    /// base path pola + default query template (raw menang) + substitusi
+    /// `{page}`/`{query}`/`{tag}`. Kunci page dari raw dibuang (adapter/cursor
+    /// yang kendalikan); sisa placeholder tak dikenal dibersihkan.
+    pub fn search_url_raw(&self, raw: &str, page: u32) -> String {
+        let payload = raw.strip_prefix("raw:").unwrap_or(raw);
+        let raw_pairs = parse_raw_params(payload);
+        let (mut base, tpl_query) = match self.list_path.split_once('?') {
+            Some((b, q)) => (b.to_string(), q),
+            None => (self.list_path.clone(), ""),
+        };
+        base = base.replace("{page}", &page.to_string());
+        let query_val = raw_query_value(&raw_pairs, self.query_key_hint());
+        let tag_val = raw_first(&raw_pairs, &["tag"])
+            .map(|t| t.to_lowercase().replace(' ', "-"))
+            .unwrap_or_default();
+        base = base
+            .replace("{query}", &crate::data::datasources::config::encode_query(&query_val))
+            .replace("{tag}", &crate::data::datasources::config::encode_query(&tag_val));
+        base = clear_placeholders(&base);
+        // Pasangan default template.
+        let mut merged: Vec<(String, String)> = Vec::new();
+        let mut consumed: Vec<String> = vec!["page".to_string(), "paged".to_string(), "p".to_string()];
+        for pair in tpl_query.split('&') {
+            if pair.is_empty() {
+                continue;
+            }
+            let (k, v) = match pair.split_once('=') {
+                Some(x) => x,
+                None => (pair, ""),
+            };
+            let filled = if v.contains("{page}") {
+                v.replace("{page}", &page.to_string())
+            } else if v.contains("{query}") {
+                consumed.push(k.to_string());
+                consumed.push("query".to_string());
+                consumed.push("q".to_string());
+                v.replace("{query}", &crate::data::datasources::config::encode_query(&query_val))
+            } else if v.contains("{tag}") {
+                consumed.push(k.to_string());
+                consumed.push("tag".to_string());
+                v.replace("{tag}", &crate::data::datasources::config::encode_query(&tag_val))
+            } else {
+                v.to_string()
+            };
+            merged.push((k.to_string(), filled));
+        }
+        // Raw menang atas default; nilai kosong tak menimpa default berisi.
+        for (k, v) in raw_pairs {
+            if consumed.iter().any(|c| c == &k) || v.is_empty() {
+                continue;
+            }
+            if let Some(slot) = merged.iter_mut().find(|(ek, _)| ek == &k) {
+                slot.1 = crate::data::datasources::config::encode_query(&v);
+            } else {
+                merged.push((k, crate::data::datasources::config::encode_query(&v)));
+            }
+        }
+        // Bersihkan default yang nilainya kosong (mis. `q=` sisa).
+        let merged: Vec<(String, String)> = merged
+            .into_iter()
+            .filter(|(_, v)| !v.trim().is_empty())
+            .collect();
+        let url = if merged.is_empty() {
+            base
+        } else {
+            format!(
+                "{base}?{}",
+                merged.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&")
+            )
+        };
+        if url.starts_with("http://") || url.starts_with("https://") {
+            return url;
+        }
+        format!("{}{}", self.base_url, url)
+    }
+
+    /// Nama kunci query template (`f_search={query}` → `f_search`) untuk
+    /// prioritas nilai query-ish dari raw.
+    fn query_key_hint(&self) -> &str {
+        for pair in self.list_path.split('?').nth(1).unwrap_or("").split('&') {
+            if let Some((k, v)) = pair.split_once('=') {
+                if v.contains("{query}") || v.contains("{q}") {
+                    return k;
+                }
+            }
+        }
+        "query"
+    }
+
+    pub fn detail_url(&self, id_or_url: &str) -> String {        if id_or_url.starts_with("http://") || id_or_url.starts_with("https://") {
             return id_or_url.to_string();
         }
         let path = crate::data::datasources::config::fill_url(
@@ -294,7 +383,82 @@ impl SourceConfig {
     }
 }
 
-/// Absolutkan src relatif ala mobile (`_toAbsoluteUrl`).
+/// Parse `k=v&k2=v2` ala mobile `_parseRawQueryParams` (decode dulu).
+fn parse_raw_params(raw: &str) -> Vec<(String, String)> {
+    raw.split('&')
+        .filter_map(|pair| {
+            if pair.is_empty() {
+                return None;
+            }
+            let (k, v) = pair.split_once('=')?;
+            Some((decode_query_component(k), decode_query_component(v)))
+        })
+        .collect()
+}
+
+/// Decode `+`/​`%XX` ala `Uri.decodeQueryComponent`; sekuen rusak dibiarkan.
+fn decode_query_component(s: &str) -> String {
+    let mut bytes: Vec<u8> = Vec::with_capacity(s.len());
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'+' {
+            bytes.push(b' ');
+            i += 1;
+        } else if b[i] == b'%' && i + 2 < b.len() {
+            if let (Some(h), Some(l)) = (hex_val(b[i + 1]), hex_val(b[i + 2])) {
+                bytes.push(h * 16 + l);
+                i += 3;
+            } else {
+                bytes.push(b[i]);
+                i += 1;
+            }
+        } else {
+            bytes.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+fn hex_val(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// Nilai non-kosong pertama dari daftar kunci (berurutan).
+fn raw_first(pairs: &[(String, String)], keys: &[&str]) -> Option<String> {
+    for k in keys {
+        if let Some((_, v)) = pairs.iter().find(|(ek, ev)| ek == *k && !ev.trim().is_empty()) {
+            return Some(v.clone());
+        }
+    }
+    None
+}
+
+/// Nilai query teks: kunci template dulu, lalu kandidat umum.
+fn raw_query_value(pairs: &[(String, String)], hint: &str) -> String {
+    let mut keys = vec![hint, "query", "q", "s", "keyword", "search", "title", "f_search"];
+    keys.dedup();
+    raw_first(pairs, &keys).unwrap_or_default()
+}
+
+/// Buang sisa `{placeholder}` agar tak bocor sebagai `%7B..%7D`.
+fn clear_placeholders(s: &str) -> String {
+    let mut out = s.to_string();
+    while let Some(a) = out.find('{') {
+        if let Some(b) = out[a..].find('}') {
+            out.replace_range(a..a + b + 1, "");
+        } else {
+            break;
+        }
+    }
+    out
+}
 fn absolutize_url(base: &str, src: &str) -> String {
     if src.is_empty() {
         return String::new();
@@ -848,6 +1012,7 @@ impl GenericRestAdapter {
     }
 
     /// Cari manga; query kosong → endpoint `allGalleries` (mobile `_searchNewSchema`).
+    /// Prefix `raw:` → param mentah digabung ke template (mobile `_buildRawSearchUrl`).
     pub async fn search_mangadex(
         &self,
         query: &str,
@@ -857,11 +1022,102 @@ impl GenericRestAdapter {
         let offset = ((page.saturating_sub(1) * MANGADEX_PAGE_SIZE).min(MANGADEX_MAX_OFFSET)).to_string();
         let url = if query.trim().is_empty() {
             self.md_endpoint("allGalleries", &[("offset", &offset)], MANGADEX_ALL)
+        } else if let Some(raw) = query.strip_prefix("raw:") {
+            self.md_endpoint_raw("search", raw, &offset, MANGADEX_SEARCH)
         } else {
             self.md_endpoint("search", &[("query", query), ("offset", &offset)], MANGADEX_SEARCH)
         };
         let body = self.http.get(&url, "mangadex").await?;
         Self::parse_mangadex(&body)
+    }
+
+    /// Endpoint + merge param `raw:` (mobile `_buildRawSearchUrl`):
+    /// placeholder `{k}` diisi nilai raw pertama (`{offset}` dari paging),
+    /// pasangan template berisi dipertahankan, sisanya raw menang.
+    fn md_endpoint_raw(&self, name: &str, raw: &str, offset: &str, fallback: &str) -> String {
+        let template = self
+            .source_file
+            .as_ref()
+            .and_then(|f| {
+                f.api.as_ref()?.endpoints.get(name)?.as_str().map(str::to_string)
+            })
+            .unwrap_or_else(|| fallback.to_string());
+        let (base, tpl_query) = match template.split_once('?') {
+            Some((b, q)) => (b.to_string(), q),
+            None => (template.clone(), ""),
+        };
+        let raw_pairs = parse_raw_params(raw);
+        let first = |k: &str| {
+            raw_pairs
+                .iter()
+                .find(|(ek, ev)| ek == k && !ev.trim().is_empty())
+                .map(|(_, v)| v.clone())
+        };
+        let mut merged: Vec<(String, String)> = Vec::new();
+        let mut consumed: Vec<String> = Vec::new();
+        for pair in tpl_query.split('&') {
+            if pair.is_empty() {
+                continue;
+            }
+            let (k, v) = match pair.split_once('=') {
+                Some(x) => x,
+                None => (pair, ""),
+            };
+            // Substitusi `{ph}` satu per satu; literal template utuh.
+            let mut out_val = String::new();
+            let mut rest = v;
+            while let Some(a) = rest.find('{') {
+                out_val.push_str(&rest[..a]);
+                let seg = &rest[a..];
+                match seg.find('}') {
+                    Some(b) => {
+                        let ph = seg[1..b].to_string();
+                        let val = if ph == "offset" {
+                            offset.to_string()
+                        } else {
+                            first(&ph).unwrap_or_default()
+                        };
+                        if !val.is_empty() {
+                            consumed.push(ph);
+                        }
+                        out_val.push_str(&encode_query(&val));
+                        rest = &seg[b + 1..];
+                    }
+                    None => {
+                        out_val.push_str(seg);
+                        rest = "";
+                    }
+                }
+            }
+            out_val.push_str(rest);
+            // Pasangan kosong (placeholder tanpa nilai) dibuang ala mobile.
+            if !out_val.trim().is_empty() {
+                merged.push((k.to_string(), out_val));
+            }
+        }
+        for (k, v) in raw_pairs {
+            if k == "offset" || v.trim().is_empty() || consumed.iter().any(|c| c == &k) {
+                continue;
+            }
+            let enc = encode_query(&v);
+            if let Some(slot) = merged.iter_mut().find(|(ek, _)| ek == &k) {
+                slot.1 = enc;
+            } else {
+                merged.push((k, enc));
+            }
+        }
+        let url = if merged.is_empty() {
+            base
+        } else {
+            format!(
+                "{base}?{}",
+                merged.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&")
+            )
+        };
+        if url.starts_with("http://") || url.starts_with("https://") {
+            return url;
+        }
+        format!("{}{}", self.md_base(), url)
     }
 
     /// Detail satu manga via API (`/manga/{id}`).
@@ -1585,7 +1841,12 @@ mod tests {
         assert!(!items1.is_empty(), "home EH kosong (CF/cookie?)");
         let next_url = next.expect("halaman 1 EH tanpa link next");
         assert!(next_url.contains("next="), "{next_url}");
-        let (items2, _) =
+
+        // Submit form `raw:` (4c): f_search Montenegro site.
+        let raw_url = cfg.search_url_raw("raw:f_search=english", 1);
+        let (raw_items, _) =
+            tauri::async_runtime::block_on(engine.fetch_list_with_next(&raw_url, &cfg)).unwrap();
+        assert!(!raw_items.is_empty(), "raw f_search kosong: {raw_url}");        let (items2, _) =
             tauri::async_runtime::block_on(engine.fetch_list_with_next(&next_url, &cfg)).unwrap();
         assert!(!items2.is_empty(), "halaman 2 EH kosong");
         let ids1: HashSet<&str> = items1.iter().map(|c| c.id.as_str()).collect();
@@ -1594,6 +1855,8 @@ mod tests {
             "halaman 2 duplikat halaman 1 (?page= diabaikan situs)"
         );
     }
+    #[test]
+    #[ignore = "hits live api.mangadex.org; jalankan manual: cargo test live_mangadex -- --ignored"]
     fn live_mangadex_search_parses() {
         // NHentai/Hitomi/E-H live 403 dari network tanpa cookie CF
         // (risiko spec §7 — mitigasi: cookie harvest Fase 2 lanjutan).
@@ -1622,6 +1885,10 @@ mod tests {
             assert!(!pages.is_empty(), "at-home kosong untuk {}", ch.id);
             assert!(pages[0].starts_with("http"), "{}", pages[0]);
         }
+        // Submit form `raw:` (4c).
+        let raw_items =
+            tauri::async_runtime::block_on(rest.search_mangadex("raw:title=naruto", 1)).unwrap();
+        assert!(!raw_items.is_empty(), "raw title=naruto kosong");
     }
 }
 
@@ -1914,6 +2181,25 @@ mod nhentai_tests {
         let pages = tauri::async_runtime::block_on(engine.fetch_page_images(&format!("{base}/ak-chapter"), &cfg)).unwrap();
         assert_eq!(pages.len(), 2);
         assert!(pages[0].contains("gudangkomik"));
+    }
+
+    #[test]
+    fn raw_query_builds_scraper_and_rest_urls() {
+        // Scraper E-Hentai: payload raw ganti template, page dikendalikan adapter.
+        let eh = ehentai_config();
+        let u = eh.search_url_raw("raw:f_search=language%3Aenglish&page=2", 1);
+        assert!(u.contains("f_search=language%3Aenglish"), "{u}");
+        assert!(!u.contains("page=2"), "{u}");
+        assert!(u.starts_with("https://e-hentai.org/?"), "{u}");
+        // REST MangaDex: merge template + raw + offset paging.
+        let http = HttpClientManager::without_proxy().unwrap();
+        let rest = GenericRestAdapter::new(http);
+        let u = rest.md_endpoint_raw("search", "title=naruto&status=completed", "0", MANGADEX_SEARCH);
+        assert!(u.contains("title=naruto"), "{u}");
+        assert!(u.contains("status=completed"), "{u}");
+        assert!(u.contains("offset=0"), "{u}");
+        assert!(u.contains("hasAvailableChapters=true"), "{u}");
+        assert!(!u.contains("title=&"), "{u}");
     }
 
     #[test]

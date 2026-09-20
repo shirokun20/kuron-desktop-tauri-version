@@ -21,12 +21,21 @@ class ContentStore {
   page = $state(1);
   hasMore = $state(true);
   source = $state("semua");
+  // Mode pencarian aktif (mobile: header "Hasil Pencarian" + bar Kueri).
+  // `mode` bedakan teks-cepat vs form-filter agar tombol tak bentrok.
+  searchQuery = $state<string | null>(null);
+  searchLabel = $state<string | null>(null);
+  searchMode = $state<"text" | "filter" | null>(null);
+  searching = $state(false);
 
   async load(source?: string) {
     this.loading = true;
     this.error = null;
     this.source = source ?? "semua";
     this.page = 1;
+    this.searchQuery = null;
+    this.searchLabel = null;
+    this.searchMode = null;
     try {
       const batch = await api.homeFeed(source, 1);
       this.feed = dedupe(batch, new Set());
@@ -38,15 +47,67 @@ class ContentStore {
     }
   }
 
+  /** Cari umum — teks biasa = mode text, `raw:` (form) = mode filter. */
+  async search(source: string, query: string, label?: string) {
+    const q = query.trim();
+    await this.runSearch(source, q, label ?? q, q.startsWith("raw:") ? "filter" : "text");
+  }
+
+  private async runSearch(
+    source: string,
+    q: string,
+    label: string,
+    mode: "text" | "filter",
+  ) {
+    if (!q) {
+      await this.load(source);
+      return;
+    }
+    this.searching = true;
+    this.error = null;
+    this.source = source;
+    this.page = 1;
+    this.searchQuery = q;
+    this.searchLabel = label;
+    this.searchMode = mode;
+    try {
+      const batch = await api.search({
+        query: q,
+        source_id: source === "semua" ? null : source,
+        page: 1,
+      });
+      this.feed = dedupe(batch, new Set());
+      this.hasMore = batch.length >= PAGE_SIZE_HINT;
+    } catch (e) {
+      this.error = `gagal mencari: ${e}`;
+    } finally {
+      this.searching = false;
+    }
+  }
+
+  /** Bersihkan pencarian → kembali ke feed (mobile: tombol Bersihkan). */
+  async clearSearch() {
+    this.searchQuery = null;
+    this.searchLabel = null;
+    this.searchMode = null;
+    await this.load(this.source);
+  }
+
   async loadMore() {
-    if (this.loadingMore || this.loading || !this.hasMore) return;
+    if (this.loadingMore || this.loading || this.searching || !this.hasMore) return;
     this.loadingMore = true;
     try {
       const next = this.page + 1;
-      const batch = await api.homeFeed(
-        this.source === "semua" ? undefined : this.source,
-        next,
-      );
+      const batch = this.searchQuery
+        ? await api.search({
+            query: this.searchQuery,
+            source_id: this.source === "semua" ? null : this.source,
+            page: next,
+          })
+        : await api.homeFeed(
+            this.source === "semua" ? undefined : this.source,
+            next,
+          );
       const seen = new Set(this.feed.map((c) => c.id));
       this.feed = [...this.feed, ...dedupe(batch, seen)];
       this.page = next;

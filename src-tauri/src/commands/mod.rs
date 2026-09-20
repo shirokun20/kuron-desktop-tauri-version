@@ -7,6 +7,7 @@ pub mod hello_commands;
 
 pub use content_commands::{
     cmd_get_chapters, cmd_get_detail, cmd_get_page_images, cmd_home_feed, cmd_search,
+    cmd_search_form, cmd_tag_query,
 };
 pub use extension_commands::{
     cmd_extension_install, cmd_extension_install_zip_file, cmd_extension_install_zip_url, cmd_extension_manifest,

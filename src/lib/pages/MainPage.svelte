@@ -5,7 +5,7 @@
   import { contentStore } from "../stores/content.svelte";
   import { helloStore } from "../stores/hello.svelte";
   import { sourceStore } from "../stores/source.svelte";
-  import { openAboutWindow, openExtensionManager } from "../api/window";
+  import { openAboutWindow, openExtensionManager, openFilterWindow } from "../api/window";
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import Sidebar from "../components/Sidebar.svelte";
@@ -54,6 +54,10 @@
   let collapsed = $state(false);
   let navError = $state<string | null>(null);
   let version = $derived(helloStore.info?.version ?? "0.1.0");
+  // Search = SATU tombol → popup form sumber (mobile: SearchScreen).
+  async function openFilter() {
+    navError = await openFilterWindow();
+  }
 
   // "Tentang"/"Ekstensi" buka popup window native (bukan ganti konten main).
   async function selectNav(id: string) {
@@ -100,7 +104,10 @@
       <button class="icon-btn" onclick={() => (collapsed = !collapsed)} title="Toggle sidebar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
-      <input class="search" placeholder="Cari judul, tag, artis… (Fase 4)" disabled />
+      <button class="icon-btn filter-btn" onclick={openFilter} title="Cari di {sourceStore.currentLabel}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        {#if contentStore.searchMode === "filter"}<span class="dot"></span>{/if}
+      </button>
       <div class="head-end">
         <ThemeToggle />
       </div>
@@ -117,12 +124,37 @@
         <p class="err">{contentStore.error}</p>
       {/if}
 
-      {#if contentStore.feed.length > 0}
+      {#if contentStore.searchQuery}
+        <section class="searchbar">
+          <strong>{contentStore.searchMode === "filter" ? "Filter" : "Hasil Pencarian"}</strong>
+          <span class="query">
+            {contentStore.searchMode === "filter" ? "Kriteria" : "Kueri"}: "{contentStore.searchLabel}"
+            · {contentStore.feed.length} hasil
+          </span>
+          <button class="ghost" onclick={() => contentStore.clearSearch()}>
+            ✕ Bersihkan
+          </button>
+        </section>
+      {/if}
+
+      {#if !contentStore.searchQuery && contentStore.feed.length > 0}
         <MainFeaturedCard items={contentStore.feed} />
       {/if}
 
+      {#if !contentStore.loading && !contentStore.searching && contentStore.feed.length === 0 && (contentStore.searchQuery || !contentStore.error)}
+        <section class="empty">
+          {#if contentStore.searchQuery}
+            <p>Tidak ada hasil untuk "{contentStore.searchLabel}" di {sourceStore.currentLabel}.</p>
+            <p class="muted">Coba kata kunci lain — atau pakai Filter untuk bahasa, tag, dan status.</p>
+          {:else}
+            <p class="muted">Feed kosong — coba Muat ulang atau ganti sumber.</p>
+          {/if}
+        </section>
+      {/if}
+
+      {#if contentStore.feed.length > 0}
       <section>
-        <h2>Terbaru</h2>
+        <h2>{contentStore.searchQuery ? `Hasil (${contentStore.feed.length})` : "Terbaru"}</h2>
         <div class="grid">
           {#each contentStore.feed as item (item.id)}
             <MainGridCard content={item} />
@@ -142,6 +174,7 @@
           {/if}
         </div>
       </section>
+      {/if}
     </main>
   </div>
 </div>
@@ -194,13 +227,49 @@
     width: 20px;
     height: 20px;
   }
-  .search {
+  .filter-btn {
+    position: relative;
+  }
+  .filter-btn .dot {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--primary);
+  }
+  .searchbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 16px;
+    background: var(--card);
+  }
+  .query {
     flex: 1;
-    max-width: 420px;
-    padding: 8px 12px;
+    color: var(--muted-foreground);
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ghost {
+    background: transparent;
+    border: 1px solid var(--border);
     border-radius: var(--radius);
-    border: 1px solid var(--input);
-    background: var(--muted);
+    padding: 6px 14px;
+    cursor: pointer;
+    color: var(--primary);
+    font-weight: 600;
+  }
+  .empty {
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
   }
   .content {
     max-width: 1180px;

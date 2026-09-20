@@ -9,7 +9,9 @@ pub mod network;
 use commands::{
     cmd_app_info, cmd_extension_install, cmd_extension_install_zip_file, cmd_extension_install_zip_url,
     cmd_extension_manifest, cmd_extension_uninstall, cmd_get_chapters, cmd_get_detail,
-    cmd_get_page_images, cmd_hello_world, cmd_home_feed, cmd_search, cmd_sources_list,
+    cmd_get_page_images, cmd_hello_world, cmd_home_feed, cmd_search, cmd_search_form,
+    cmd_tag_query,
+    cmd_sources_list,
 };
 use core::{logger, AppState};
 use tauri::{
@@ -172,6 +174,8 @@ pub fn run() {
             cmd_app_info,
             cmd_home_feed,
             cmd_search,
+            cmd_search_form,
+            cmd_tag_query,
             cmd_get_detail,
             cmd_get_chapters,
             cmd_get_page_images,

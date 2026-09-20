@@ -16,6 +16,15 @@ export const api = {
   appInfo: (): Promise<AppInfo> => invoke("cmd_app_info"),
   homeFeed: (source?: string, page?: number): Promise<Content[]> =>
     invoke("cmd_home_feed", { source: source ?? null, page: page ?? null }),
+  search: (filter: {
+    query: string;
+    source_id: string | null;
+    page: number;
+  }): Promise<Content[]> => invoke("cmd_search", { filter }),
+  searchForm: (source: string): Promise<unknown> =>
+    invoke("cmd_search_form", { source }),
+  tagQuery: (source: string, tagType: string, tagName: string): Promise<string> =>
+    invoke("cmd_tag_query", { source, tagType, tagName }),
   sourcesList: (): Promise<InstalledSource[]> => invoke("cmd_sources_list"),
   extManifest: (url?: string): Promise<ExtensionManifest> =>
     invoke("cmd_extension_manifest", { url: url ?? null }),

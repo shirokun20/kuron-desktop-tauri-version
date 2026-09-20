@@ -111,7 +111,13 @@ impl ContentRepositoryImpl {
         let page = page.max(1);
         let key = PaginationCursors::search_key(&self.config.source_id, query, page);
         let next_key = PaginationCursors::search_key(&self.config.source_id, query, page + 1);
-        self.fetch_scraper_cursored(&key, &next_key, || self.config.list_url(query, page)).await
+        // Konvensi `raw:` mobile: payload param mentah ganti query template.
+        let template = if query.starts_with("raw:") {
+            self.config.search_url_raw(query, page)
+        } else {
+            self.config.list_url(query, page)
+        };
+        self.fetch_scraper_cursored(&key, &next_key, || template).await
     }
 
     async fn fetch_scraper_cursored(

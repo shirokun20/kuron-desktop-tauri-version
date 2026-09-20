@@ -261,6 +261,19 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "repro manual 4c.6"]
+    fn repro_md_rating() {
+        use crate::domain::{repositories::ContentRepository, SearchFilter};
+        let state = AppState::default();
+        let repo = state.repo_for("mangadex").unwrap();
+        for q in ["raw:contentRating[]=erotica", "raw:contentRating%5B%5D=erotica"] {
+            let filter = SearchFilter { query: q.to_string(), source_id: Some("mangadex".to_string()), page: 1 };
+            let items = tauri::async_runtime::block_on(async { repo.search(filter).await }).unwrap();
+            eprintln!("REPRO md q={q} -> {} item", items.len());
+        }
+    }
+
+    #[test]
     fn unknown_source_errors_with_hint() {
         let state = AppState::default();
         match state.repo_for("tidak-ada") {

@@ -110,3 +110,8 @@ export function openAboutWindow(): Promise<string | null> {
 export function openExtensionManager(): Promise<string | null> {
   return openPopup("extension-manager", "#extensions", "Ekstensi", 560, 720);
 }
+
+/** Popup window native "Filter Pencarian". Fokuskan bila sudah ada. */
+export function openFilterWindow(): Promise<string | null> {
+  return openPopup("filter", "#filter", "Filter Pencarian", 560, 720);
+}
