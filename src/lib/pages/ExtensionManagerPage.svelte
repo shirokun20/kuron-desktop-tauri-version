@@ -19,6 +19,9 @@
   const installedIds = $derived(
     new Set(sourceStore.available.map((s) => s.id)),
   );
+  const installedSources = $derived(
+    sourceStore.available.filter((source) => source.id !== "semua"),
+  );
 
   onMount(() => {
     sourceStore.load();
@@ -165,6 +168,37 @@
   {#if notice}
     <p class="ok">{notice}</p>
   {/if}
+
+  <h2>Terpasang ({installedSources.length})</h2>
+  <div class="list">
+    {#each installedSources as source (source.id)}
+      <div class="card">
+        {#if source.iconUrl}
+          <img class="source-icon" src={source.iconUrl} alt="" />
+        {:else}
+          <span class="source-icon icon-fallback">
+            {source.label.slice(0, 1).toUpperCase()}
+          </span>
+        {/if}
+        <div class="info">
+          <strong>{source.label}</strong>
+          <small>{source.id}{source.version ? ` • ${source.version}` : ""}</small>
+        </div>
+        <button
+          class="ghost danger"
+          onclick={() => uninstall(source.id)}
+          disabled={busy === source.id || source.id === "nhentai"}
+          title={source.id === "nhentai" ? "Bawaan aplikasi" : "Hapus sumber"}
+        >
+          {busy === source.id ? "…" : source.id === "nhentai" ? "Bawaan" : "Hapus"}
+        </button>
+      </div>
+    {:else}
+      <p class="muted">
+        {sourceStore.loading ? "Memuat…" : "Belum ada sumber terpasang."}
+      </p>
+    {/each}
+  </div>
 
   <h2>Tersedia ({entries.length})</h2>
   <div class="list">
@@ -403,5 +437,19 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .source-icon {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    border-radius: 9px;
+    object-fit: cover;
+  }
+  .icon-fallback {
+    display: grid;
+    place-items: center;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    font-weight: 700;
   }
 </style>
