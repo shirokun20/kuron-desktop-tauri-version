@@ -13,7 +13,7 @@ export const DEFAULT_MANIFEST_URL =
 
 /** Mode web (dibuka via browser): backend Rust tidak ada. */
 export const WEB_OFFLINE_MSG =
-  "mode web: backend Rust tidak aktif — jalankan `pnpm dev` untuk data nyata";
+  "mode web: backend Rust tidak aktif — data nyata hanya di aplikasi desktop";
 
 /** Command Rust; di web ditolak dengan pesan jelas (bukan error kriptik). */
 function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

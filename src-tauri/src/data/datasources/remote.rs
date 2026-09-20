@@ -1927,6 +1927,7 @@ mod tests {
             asset_hosts: std::collections::HashMap::new(),
             navigation: serde_json::Value::Null,
             search_form: serde_json::Value::Null,
+            ui: serde_json::Value::Null,
         };
         GenericRestAdapter::new(http).with_source_file(file)
     }

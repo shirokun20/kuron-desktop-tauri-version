@@ -209,6 +209,9 @@ impl AppState {
     }
 
     /// Daftar sumber efektif (bundled + installed) untuk UI.
+    /// Ikon per sumber: meta.json hasil install dulu (URL absolut dari
+    /// manifest), lalu `ui.iconPath` dari config itu sendiri (bundled/lokal),
+    /// terakhir None (UI pakai fallback inisial).
     pub fn source_entries(&self) -> Result<Vec<InstalledSource>, crate::core::AppError> {
         let overlay =
             SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &self.ext_dir)?;
@@ -219,13 +222,16 @@ impl AppState {
                 let icon_url = std::fs::read_to_string(&meta_path)
                     .ok()
                     .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-                    .and_then(|v| v.get("icon_url")?.as_str().map(String::from));
+                    .and_then(|v| v.get("icon_url")?.as_str().map(String::from))
+                    .or_else(|| cfg.ui_icon_path());
+                let display_name = cfg.ui_display_name();
                 InstalledSource {
                     id: id.clone(),
                     version: cfg.version.clone(),
                     base_url: cfg.base_url.clone(),
                     installed: self.ext_dir.join(format!("{id}-config.json")).exists(),
                     icon_url,
+                    display_name,
                 }
             })
             .collect();
@@ -242,6 +248,8 @@ pub struct InstalledSource {
     pub base_url: String,
     pub installed: bool,
     pub icon_url: Option<String>,
+    /// `ui.displayName` dari config sumber (nama tampil ala mobile).
+    pub display_name: Option<String>,
 }
 
 impl Default for AppState {
@@ -283,6 +291,76 @@ mod tests {
             Err(e) => assert!(e.to_string().contains("belum ter-install"), "{e}"),
             Ok(_) => panic!("seharusnya error"),
         }
+    }
+
+    /// AppState dengan ext_dir fixture (pola sama dengan `config.rs::write_fixture`).
+    fn state_with_ext_dir(dir: &std::path::Path) -> AppState {
+        let _ = std::fs::create_dir_all(dir);
+        AppState {
+            app_name: "test".into(),
+            version: "0".into(),
+            content_repo: Arc::new(MockContentRepository),
+            http: HttpClientManager::new().expect("tls backend init"),
+            ext_dir: dir.to_path_buf(),
+            cursors: PaginationCursors::default(),
+        }
+    }
+
+    /// Config fixture: bundled `ui.iconPath` lokal harus terbaca sebagai ikon.
+    #[test]
+    fn source_entries_reads_icon_from_bundled_config() {
+        let dir = std::env::temp_dir().join(format!("kuron-icon-bundled-{}", std::process::id()));
+        let state = state_with_ext_dir(&dir);
+        let entries = state.source_entries().unwrap();
+        let nh = entries
+            .iter()
+            .find(|s| s.id == "nhentai")
+            .expect("bundled nhentai harus ada");
+        let icon = nh.icon_url.as_deref().expect("ui.iconPath bundled terbaca");
+        assert!(icon.contains("nhentai.png"), "ikon nhentai: {icon}");
+        assert_eq!(nh.display_name.as_deref(), Some("NHentai"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Sumber ter-install: meta.json (dari manifest) MENANG atas ui.iconPath
+    /// config, dan display_name tetap dari config.
+    #[test]
+    fn installed_meta_icon_overrides_bundled_config_icon() {
+        let dir = std::env::temp_dir().join(format!("kuron-icon-installed-{}", std::process::id()));
+        let state = state_with_ext_dir(&dir);
+        std::fs::write(
+            dir.join("nhentai-config.json"),
+            r#"{"source":"nhentai","version":"1.2.3","baseUrl":"https://i.nhentai.net","ui":{"displayName":"NHentai","iconPath":"config-icon.png"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("nhentai-meta.json"),
+            r#"{"icon_url":"https://cdn.example.com/nhentai.png"}"#,
+        )
+        .unwrap();
+        let entries = state.source_entries().unwrap();
+        let nh = entries.iter().find(|s| s.id == "nhentai").unwrap();
+        assert_eq!(nh.icon_url.as_deref(), Some("https://cdn.example.com/nhentai.png"));
+        assert_eq!(nh.display_name.as_deref(), Some("NHentai"));
+        assert!(nh.installed);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Config tanpa `ui` sama sekali → icon_url/display_name None (fallback UI).
+    #[test]
+    fn source_without_ui_section_has_no_icon() {
+        let dir = std::env::temp_dir().join(format!("kuron-icon-empty-{}", std::process::id()));
+        let state = state_with_ext_dir(&dir);
+        std::fs::write(
+            dir.join("polos-config.json"),
+            r#"{"source":"polos","version":"0.1","baseUrl":"https://p.example"}"#,
+        )
+        .unwrap();
+        let entries = state.source_entries().unwrap();
+        let p = entries.iter().find(|s| s.id == "polos").unwrap();
+        assert!(p.icon_url.is_none());
+        assert!(p.display_name.is_none());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

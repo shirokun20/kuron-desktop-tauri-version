@@ -85,6 +85,15 @@ pub struct NetworkSection {
     pub retry: Option<RetrySection>,
 }
 
+/// Blok `ui` config mobile (`displayName`/`iconPath`/`themeColor`/`brandColor`
+/// dkk) disimpan APA ADANYA sebagai `serde_json::Value` — pola sama dengan
+/// `navigation`/`search_form`. Alasan: field blok `ui` bervariasi antar
+/// config/versi (mis. `brandColor` di config lama), dan UI tidak boleh gagal
+/// parse gara-gara itu. Ekstraksi terkontrol lewat helper di bawah.
+///
+/// `iconPath` bisa URL https ATAU path lokal/relatif — frontend mengerti
+/// keduanya (`assetUrl`).
+
 /// Satu file `*-config.json` mobile (skema assets/ maupun informations/ —
 /// keduanya punya `source/version/baseUrl`, berbeda di `api` vs `scraper`).
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -111,6 +120,28 @@ pub struct SourceFile {
     pub search_form: serde_json::Value,
     #[serde(default, rename = "assetHosts")]
     pub asset_hosts: HashMap<String, String>,
+    /// Identitas UI sumber (`ui.displayName`/`iconPath`/`themeColor`) — Value
+    /// apa adanya; ekstraksi via `ui_icon_path()`/`ui_display_name()`.
+    #[serde(default, rename = "ui")]
+    pub ui: serde_json::Value,
+}
+
+impl SourceFile {
+    /// `ui.iconPath` — URL ikon sumber (manifest) ATAU path lokal/relatif.
+    pub fn ui_icon_path(&self) -> Option<String> {
+        self.ui
+            .get("iconPath")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+    }
+
+    /// `ui.displayName` — nama tampil sumber ala mobile.
+    pub fn ui_display_name(&self) -> Option<String> {
+        self.ui
+            .get("displayName")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

@@ -51,7 +51,11 @@ pub fn cmd_extension_install(
             .map(|u| crate::data::datasources::extension::ExtensionManifest::resolve_url(
                 &manifest_url,
                 &u,
-            )),
+            ))
+            // Meta manifest kosong → pakai ikon dari config sumber itu sendiri
+            // (alur sama dengan sumber bundled di `source_entries`).
+            .or_else(|| cfg.ui_icon_path()),
+        display_name: cfg.ui_display_name(),
     })
 }
 

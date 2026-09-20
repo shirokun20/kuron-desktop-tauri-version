@@ -161,7 +161,35 @@
         <p class="err">{contentStore.error}</p>
       {/if}
 
-      {#if contentStore.searchQuery}
+      {#if contentStore.offline}
+        <!-- Mode web (browser): backend Rust tidak bisa dijangkau dari tab -->
+        <!-- mana pun. Kondisi rapi + pintu ke overlay, bukan banner error. -->
+        <section class="empty offline">
+          <h2>Mode Web — tanpa backend</h2>
+          <p>
+            UI berjalan penuh, tapi feed &amp; pencarian butuh backend Rust yang
+            hanya hidup di dalam aplikasi desktop (Tauri). Tab browser tidak
+            bisa memanggilnya, jadi data nyata tidak tersedia di sini.
+          </p>
+          <p class="muted">
+            Untuk feed nyata: jalankan aplikasi desktop
+            (<code>pnpm dev</code> atau binary hasil <code>pnpm build</code>).
+          </p>
+          <div class="actions">
+            <button class="ghost" onclick={() => overlayStore.open("source")}>
+              Pilih Sumber
+            </button>
+            <button
+              class="ghost"
+              onclick={() => contentStore.load(sourceStore.current)}
+            >
+              Coba Muat Ulang
+            </button>
+          </div>
+        </section>
+      {/if}
+
+      {#if contentStore.searchQuery && !contentStore.offline}
         <section class="searchbar">
           <strong>{contentStore.searchMode === "filter" ? "Filter" : "Hasil Pencarian"}</strong>
           <span class="query">
@@ -178,7 +206,7 @@
         <MainFeaturedCard items={contentStore.feed} />
       {/if}
 
-      {#if !contentStore.loading && !contentStore.searching && contentStore.feed.length === 0 && (contentStore.searchQuery || !contentStore.error)}
+      {#if !contentStore.loading && !contentStore.searching && contentStore.feed.length === 0 && (contentStore.searchQuery || (!contentStore.error && !contentStore.offline))}
         <section class="empty">
           {#if contentStore.searchQuery}
             <p>Tidak ada hasil untuk "{contentStore.searchLabel}" di {sourceStore.currentLabel}.</p>
@@ -332,6 +360,23 @@
     border-radius: 12px;
     padding: 24px;
     text-align: center;
+  }
+  /* Kondisi mode web (tanpa backend Rust): panel penjelasan, bukan error. */
+  .offline h2 {
+    margin: 0 0 8px;
+  }
+  .offline code {
+    background: var(--muted);
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 12px;
+  }
+  .offline .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 16px;
   }
   .content {
     max-width: 1180px;

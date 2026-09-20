@@ -39,7 +39,11 @@ export type SourceId = string;
 
 export type Language = "En" | "Id" | "Zh" | { "Other": string };
 
-export type InstalledSource = { id: string, version: string, base_url: string, installed: boolean, icon_url: string | null, };
+export type InstalledSource = { id: string, version: string, base_url: string, installed: boolean, icon_url: string | null, 
+/**
+ * `ui.displayName` dari config sumber (nama tampil ala mobile).
+ */
+display_name: string | null, };
 
 export type ExtensionManifest = { schemaVersion: number, minimumAppVersion: string, installableSources: Array<ManifestEntry>, };
 

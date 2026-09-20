@@ -1,6 +1,8 @@
 // Content store — ganti `ContentBloc/HomeBloc` (spec §14).
 // Pagination: page-1 reset, loadMore append + dedupe (anti each_key_duplicate).
-import { api } from "../api/client";
+// Mode web (browser): feed tak punya jalur → `offline` (kondisi UI rami),
+// BUKAN error merah "gagal muat feed".
+import { api, WEB_OFFLINE_MSG } from "../api/client";
 import type { Content } from "../domain/types";
 
 const PAGE_SIZE_HINT = 20;
@@ -18,6 +20,8 @@ class ContentStore {
   loading = $state(false);
   loadingMore = $state(false);
   error = $state<string | null>(null);
+  // True di mode web (tanpa backend Rust): UI rapi, bukan banner error.
+  offline = $state(false);
   page = $state(1);
   hasMore = $state(true);
   source = $state("semua");
@@ -28,9 +32,19 @@ class ContentStore {
   searchMode = $state<"text" | "filter" | null>(null);
   searching = $state(false);
 
+  private fail(e: unknown, prefix: string) {
+    if (e instanceof Error && e.message === WEB_OFFLINE_MSG) {
+      this.offline = true;
+      this.error = null;
+      return;
+    }
+    this.error = `${prefix}: ${e}`;
+  }
+
   async load(source?: string) {
     this.loading = true;
     this.error = null;
+    this.offline = false;
     this.source = source ?? "semua";
     this.page = 1;
     this.searchQuery = null;
@@ -41,7 +55,8 @@ class ContentStore {
       this.feed = dedupe(batch, new Set());
       this.hasMore = batch.length >= PAGE_SIZE_HINT;
     } catch (e) {
-      this.error = `gagal muat feed: ${e}`;
+      this.feed = [];
+      this.fail(e, "gagal muat feed");
     } finally {
       this.loading = false;
     }
@@ -65,6 +80,7 @@ class ContentStore {
     }
     this.searching = true;
     this.error = null;
+    this.offline = false;
     this.source = source;
     this.page = 1;
     this.searchQuery = q;
@@ -79,7 +95,8 @@ class ContentStore {
       this.feed = dedupe(batch, new Set());
       this.hasMore = batch.length >= PAGE_SIZE_HINT;
     } catch (e) {
-      this.error = `gagal mencari: ${e}`;
+      this.feed = [];
+      this.fail(e, "gagal mencari");
     } finally {
       this.searching = false;
     }
@@ -95,6 +112,7 @@ class ContentStore {
 
   async loadMore() {
     if (this.loadingMore || this.loading || this.searching || !this.hasMore) return;
+    if (this.offline) return;
     this.loadingMore = true;
     try {
       const next = this.page + 1;
@@ -113,7 +131,7 @@ class ContentStore {
       this.page = next;
       this.hasMore = batch.length >= PAGE_SIZE_HINT;
     } catch (e) {
-      this.error = `gagal muat halaman ${this.page + 1}: ${e}`;
+      this.fail(e, `gagal muat halaman ${this.page + 1}`);
     } finally {
       this.loadingMore = false;
     }
