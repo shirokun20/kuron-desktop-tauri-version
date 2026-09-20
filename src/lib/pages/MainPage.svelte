@@ -52,14 +52,8 @@
 
   let activeNav = $state("home");
   let collapsed = $state(false);
-  let name = $state("");
   let navError = $state<string | null>(null);
   let version = $derived(helloStore.info?.version ?? "0.1.0");
-
-  function submit(e: SubmitEvent) {
-    e.preventDefault();
-    helloStore.sayHello(name);
-  }
 
   // "Tentang"/"Ekstensi" buka popup window native (bukan ganti konten main).
   async function selectNav(id: string) {
@@ -147,22 +141,6 @@
             <p class="muted">Semua sudah dimuat.</p>
           {/if}
         </div>
-      </section>
-
-      <section class="card">
-        <h2>Backend status</h2>
-        <p class="muted">
-          {helloStore.info
-            ? `${helloStore.info.name} v${helloStore.info.version} · ${helloStore.info.backend}`
-            : "loading backend info…"}
-        </p>
-        <form class="row" onsubmit={submit}>
-          <input bind:value={name} placeholder="Test IPC sapa…" />
-          <button type="submit">Sapa</button>
-        </form>
-        {#if helloStore.hello}
-          <p class="msg">{helloStore.hello.message}</p>
-        {/if}
       </section>
     </main>
   </div>
@@ -264,42 +242,11 @@
   .more:hover:not(:disabled) {
     background: color-mix(in srgb, var(--primary) 12%, transparent);
   }
-  .card {
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 20px;
-    background: var(--card);
-  }
   .muted {
     color: var(--muted-foreground);
     font-size: 14px;
   }
   .err {
     color: var(--destructive);
-  }
-  .msg {
-    color: var(--primary);
-    font-weight: 600;
-  }
-  .row {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-  }
-  .row input {
-    flex: 1;
-    padding: 8px 12px;
-    border-radius: var(--radius);
-    border: 1px solid var(--input);
-    background: var(--muted);
-  }
-  button[type="submit"] {
-    padding: 8px 20px;
-    border-radius: var(--radius);
-    border: none;
-    background: var(--primary);
-    color: var(--primary-foreground);
-    font-weight: 600;
-    cursor: pointer;
   }
 </style>
