@@ -46,7 +46,9 @@ pub async fn cmd_search(
 }
 
 /// Definisi `searchForm` satu sumber (field unik per situs, mobile
-/// `DynamicFormSearchUI`); `dataSources` endpoint di-resolve jadi `options`.
+/// `DynamicFormSearchUI`); `dataSources` endpoint di-resolve jadi `options`
+/// (MangaDex `/manga/tag` → `attributes.name.en`). Nilai `params.*` ikut
+/// urutan JSON config (teks dulu di frontend, sisanya 1:1 config).
 #[tauri::command]
 pub async fn cmd_search_form(
     state: State<'_, AppState>,

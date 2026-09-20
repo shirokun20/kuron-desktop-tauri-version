@@ -28,6 +28,11 @@ pub struct ApiSection {
     pub detail: serde_json::Value,
     #[serde(default)]
     pub images: serde_json::Value,
+    /// Aturan query ala mobile `api.queryRules.{search,chapters}`
+    /// (`ensureParams`, `enforceMultiValueParams`,
+    /// `ensureMultiValueParamsIfMissing`).
+    #[serde(default, rename = "queryRules")]
+    pub query_rules: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -212,7 +217,10 @@ pub struct ResolvedPattern<'a> {
 
 impl SourceFile {
     /// Template endpoint `api.endpoints[name]` dengan `{key}` terisi params.
-    /// Fallback `None` bila endpoint tak ada (caller pakai path bawaan).
+    /// `rawParam` = fragmen query mentah ala mobile
+    /// (`_rebuildUrlWithQueryParams`): nilai `order[x]=y` ditempel utuh,
+    /// bukan sebagai `rawParam=..`. Fallback `None` bila endpoint tak ada
+    /// (caller pakai path bawaan).
     pub fn endpoint(&self, name: &str, params: &[(&str, &str)]) -> Option<String> {
         let template = self.api.as_ref()?.endpoints.get(name)?;
         // Nilai string langsung, atau map {path, params}.
@@ -235,7 +243,22 @@ impl SourceFile {
             }
             url
         };
-        let url = fill_url(&raw, params);
+        let mut raw_params: Vec<(&str, &str)> = Vec::new();
+        let mut raw_fragments: Vec<String> = Vec::new();
+        for (k, v) in params {
+            if *k == "rawParam" {
+                if !v.trim().is_empty() {
+                    raw_fragments.push((*v).to_string());
+                }
+            } else {
+                raw_params.push((k, v));
+            }
+        }
+        let mut url = fill_url(&raw, &raw_params);
+        if !raw_fragments.is_empty() {
+            let sep = if url.contains('?') { "&" } else { "?" };
+            url = format!("{url}{sep}{}", raw_fragments.join("&"));
+        }
         if url.starts_with("http://") || url.starts_with("https://") {
             return Some(url);
         }
@@ -278,9 +301,30 @@ pub fn fill_url(template: &str, params: &[(&str, &str)]) -> String {
 }
 
 pub(crate) fn encode_query(v: &str) -> String {
+    // Ala `Uri.encodeQueryComponent` — `[`/`]` ikut di-encode
+    // (`contentRating[]` → `contentRating%5B%5D`), cocok dengan raw editor.
     let mut out = String::with_capacity(v.len());
     for b in v.bytes() {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else if b == b' ' {
+            out.push('+');
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// Encode NAMA kunci query: `[`/`]` tetap literal (`contentRating[]`),
+/// sisanya ikut `encode_query` (mobile: `'${key}=$encodedValue'`).
+#[allow(dead_code)]
+pub(crate) fn encode_query_key(k: &str) -> String {
+    let mut out = String::with_capacity(k.len());
+    for b in k.bytes() {
+        if b.is_ascii_alphanumeric()
+            || matches!(b, b'-' | b'_' | b'.' | b'~' | b'[' | b']')
+        {
             out.push(b as char);
         } else if b == b' ' {
             out.push('+');
@@ -317,8 +361,9 @@ pub struct SourceConfigs {
 }
 
 impl SourceConfigs {
-    /// Dir config bawaan bundle: HANYA `nhentai-config.json` (1:1 mobile —
-    /// sumber lain wajib install via ekstensi, lihat `extension.rs`).
+    /// Dir config bawaan: `nhentai` + adapter bawaan (`mangadex`, `ehentai`,
+    /// `hitomi`) agar search/filter config-driven out-of-the-box;
+    /// overlay ekstensi (`load_overlay`) tetap menang atas bundle.
     pub fn bundled_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/source-configs")
     }
@@ -393,12 +438,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bundled_nhentai_only_and_overlay_wins() {
-        // Bundle: hanya nhentai (1:1 mobile).
+    fn bundled_core_configs_and_overlay_wins() {
+        // Bundle: nhentai + adapter bawaan (mangadex/ehentai/hitomi).
         let bundled = SourceConfigs::load_dir(&SourceConfigs::bundled_dir()).unwrap();
-        assert_eq!(bundled.len(), 1, "bundle wajib 1 config");
+        assert_eq!(bundled.len(), 4, "bundle wajib 4 config inti");
         let nh = bundled.get("nhentai").expect("nhentai bawaan");
         assert_eq!(nh.base_url, "https://nhentai.net");
+        assert!(bundled.get("mangadex").is_some(), "mangadex bawaan (tags + rating)");
         // Overlay: installed menimpa bundled bila id sama.
         let dir = std::env::temp_dir().join(format!("kuron-test-ov-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -410,7 +456,7 @@ mod tests {
         .unwrap();
         let merged =
             SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &dir).unwrap();
-        assert_eq!(merged.len(), 1);
+        assert_eq!(merged.len(), 4);
         assert_eq!(merged.get("nhentai").unwrap().version, "9.9.9");
         let _ = std::fs::remove_dir_all(&dir);
     }

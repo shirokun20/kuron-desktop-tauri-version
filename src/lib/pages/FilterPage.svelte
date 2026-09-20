@@ -62,7 +62,9 @@
 
   onMount(async () => {
     try {
-      form = (await api.searchForm(sourceStore.current)) as Record<string, any> | null;
+      const raw = (await api.searchForm(sourceStore.current)) as any;
+      // Backend: `{params, dataSources}` langsung ATAU `{searchForm: {...}}`.
+      form = (raw?.params ? raw : raw?.searchForm ?? raw) as Record<string, any> | null;
       for (const [key] of orderedEntries()) openGroups[key] = true;
     } catch (e) {
       error = `gagal muat form: ${e}`;
@@ -97,7 +99,22 @@
   }
 
   function isMulti(def: any): boolean {
-    return def?.type === "tag" || def?.type === "checkbox";
+    if (def?.ui?.multi === true) return true;
+    if (def?.type === "checkbox") return true;
+    // `tag` + dataSource (picker multi ala mobile) ATAU tag tanpa options
+    // inline (opsi datang dari dataSources ter-resolve).
+    if (def?.type === "tag") {
+      if (def?.ui?.dataSource) return true;
+      if (!Array.isArray(def?.options)) return true;
+    }
+    return false;
+  }
+
+  /** Pilihan picker/checkbox: options inline atau `dataSources` ter-resolve. */
+  function pickerOptions(def: any): Option[] {
+    const ds = optionsFor(def);
+    if (ds.length) return ds;
+    return normOptions(def?.options);
   }
 
   function selectedCount(key: string): number {
@@ -235,25 +252,18 @@
   {:else}
     <form class="body" onsubmit={submit}>
       {#each orderedEntries() as [key, def]}
-        {@const opts = optionsFor(def)}
+        {@const opts = pickerOptions(def)}
         {@const n = selectedCount(key)}
-        {#if def?.type === "select" || def?.type === "sort"}
-          <label class="field">
-            <span class="label">{labelFor(key, def)}</span>
-            <select bind:value={values[key]}>
-              <option value="">— Semua —</option>
-              {#each opts as o}
-                <option value={o.value}>{o.label}</option>
-              {/each}
-            </select>
-          </label>
-        {:else if isMulti(def) && opts.length > 0}
+        {#if isMulti(def)}
           <details class="group" open={openGroups[key] ?? true}>
             <summary>
               {labelFor(key, def)}
               {#if n > 0}<span class="count">{n}</span>{/if}
             </summary>
             <div class="pills">
+              {#if opts.length === 0}
+                <p class="muted">Opsi tak termuat — ketik manual di bawah lalu Enter.</p>
+              {/if}
               {#each opts as o}
                 {@const on = Array.isArray(values[key]) && (values[key] as string[]).includes(o.value)}
                 <button
@@ -265,8 +275,46 @@
                   {o.label}
                 </button>
               {/each}
+              {#if Array.isArray(values[key])}
+                {#each (values[key] as string[]).filter((v) => !opts.some((o) => o.value === v)) as manual}
+                  <button
+                    type="button"
+                    class="pill on"
+                    title="Hapus"
+                    onclick={() => toggle(key, manual)}
+                  >
+                    {manual} ✕
+                  </button>
+                {/each}
+              {/if}
             </div>
+            <label class="field manual">
+              <span class="hint">Tambah manual (ID/slug, Enter)</span>
+              <input
+                type="text"
+                placeholder={def?.placeholder ?? labelFor(key, def)}
+                onkeydown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  const t = (e.currentTarget as HTMLInputElement).value;
+                  const cur = Array.isArray(values[key]) ? [...(values[key] as string[])] : [];
+                  for (const s of splitInput(def, t)) if (!cur.includes(s)) cur.push(s);
+                  values[key] = cur;
+                  (e.currentTarget as HTMLInputElement).value = "";
+                }}
+              />
+            </label>
           </details>
+        {:else if def?.type === "select" || def?.type === "sort"}
+          <label class="field">
+            <span class="label">{labelFor(key, def)}</span>
+            <select bind:value={values[key]}>
+              <option value="">— Semua —</option>
+              {#each opts as o}
+                <option value={o.value}>{o.label}</option>
+              {/each}
+            </select>
+          </label>
         {:else}
           <label class="field">
             <span class="label">{labelFor(key, def)}</span>
@@ -360,6 +408,9 @@
     background: var(--muted);
     color: inherit;
     font-size: 14px;
+  }
+  .manual {
+    padding: 0 14px 14px;
   }
   .field input:focus,
   .field select:focus {

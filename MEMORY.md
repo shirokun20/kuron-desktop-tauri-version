@@ -63,7 +63,7 @@ src-tauri/src/
 │   │                  # get_chapters, get_page_images
 ├── network.rs         # HttpClientManager (rustls/jar/retry) + DoH JSON + kuron_user_agent
 ├── cache.rs           # ImageCache (`$sourceId/$contentId/page_N.jpg` via FileCacheDs)
-└── resources/         # source-configs/nhentai-config.json (SATU-SATUNYA bundel)
+└── resources/         # source-configs/ inti (nhentai + mangadex/ehentai/hitomi)
 
 src/lib/
 ├── api/               # client.ts (typed invoke) + window.ts (resize + openPopup generik)
@@ -80,7 +80,7 @@ src/lib/
 - **Data**: Depends only on Domain. Remote/local real (mock hanya default AppState).
 - **Application**: Depends only on Domain. Satu use case = satu file + `execute` async.
 - **Presentation**: Svelte via `invoke('cmd_*')` only. Commands thin, `AppError -> String` di boundary.
-- **Sources**: JSON config mobile (bundel nhentai-only, sisanya installable + sha256).
+- **Sources**: JSON config mobile (bundle inti nhentai+mangadex/ehentai/hitomi agar search/filter config-driven; sisanya installable + sha256, overlay menang).
 
 ---
 
@@ -109,6 +109,8 @@ src/lib/
 
 > Session log in this table. Last updated: 2026-09-20.
 
+| 2026-09-20 | Muse | Parity search/filter MangaDex | Done | Bundle `mangadex/ehentai/hitomi-config.json` (tag `/manga/tag` + queryRules out-of-the-box); `md_endpoint_raw` ganti-total per kunci (contentRating 1 nilai gusur 4 default), `rawParam` ditempel utuh `order[x]=y`, `apply_query_rules` (hasAvailableChapters + multi); REST `with_source_file`; FilterPage picker fallback Enter + `ui.multi`; `cargo` 45 pass/8 ignored (`repro_md_rating` live hijau, curl erotica 6256), `pnpm` 0/0. |
+| 2026-09-20 | Muse | Fix filter NHentai 0 hasil | Done | Filter kirim `raw:query=..&sort=..`, tapi `NhentaiApiAdapter::search` tak urai prefix `raw:` (scraper/REST bisa) → kueri harfiah `raw:query=..` → API balas `total:0` (curl bukti). Kini `search_url()` murni: urai raw (query+sort, `tag_id`→endpoint `tagSearch`), kosong→allGalleries. Tes regresi + live API hijau. Catatan: 6 tes gagal sandbox (`TcpListener` bind ditolak), 1 tes bundle gagal karena sesi paralel tambah 3 config bundel (WIP, bukan dari fix ini). |
 | 2026-09-20 | OpenCode | Port paket generik mobile | Done | Dari `kuron_generic`: rantai image-fallback (data-src/data-lazy-src/pagespeed + placeholder `*_result`/pagespeed_static) + regex dotAll group1-else-0; `fill_url` (encode query, drop param kosong ala UrlBuilder — cegah 400 sekelas nhentai); rate-resolve minDelay→rps→rpm ala factory. Factory dedicated→generik + pipeline/referer dicatat untuk Fase 5/6. `cargo test` 36 pass/6 ignored, live NHentai+MangaDex hijau. |
 | 2026-09-20 | OpenCode | Zip via file picker | Done | Link saja kurang → `tauri-plugin-dialog` + `cmd_extension_install_zip_file` (filter .zip, batal = info) + tombol "Pilih file .zip…" (URL tetap ada). Perlu restart `pnpm dev` (plugin + capability). Hijau semua. |
 | 2026-09-20 | OpenCode | Hapus panel Backend status | Done | User: panel `Kuron Desktop v0.1.0 · tauri-v2` + form Sapa dihapus dari MainPage (+ CSS + state mati). Versi tetap di footer sidebar + Tentang. Spec app-shell diselaraskan. `pnpm check` 0/0. |

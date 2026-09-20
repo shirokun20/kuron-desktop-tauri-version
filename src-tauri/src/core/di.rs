@@ -102,6 +102,14 @@ impl AppState {
         let http = self.http.clone();
         let scraper = GenericScraperAdapter::new(http.clone());
         let rest = GenericRestAdapter::new(http.clone());
+        // REST adapter ikut JSON sumber (endpoint + queryRules config-driven);
+        // bila tak ada `api`, fallback template bawaan per sumber.
+        let rest = match source_id {
+            "mangadex" | "hitomi" | "ehentai" | "nhentai" => {
+                rest.with_source_file(source_cfg.clone())
+            }
+            _ => rest,
+        };
         if source_id == "nhentai" {
             let api = NhentaiApiAdapter::from_config(http, source_cfg);
             let scfg = Self::scraper_config_for("nhentai").unwrap_or(SourceConfig {
@@ -137,14 +145,9 @@ impl AppState {
             ));
         }
         match source_id {
-            // JSON installed menang; hardcode hanya fallback bila JSON tak
+            // JSON bundled/installed menang; hardcode hanya bila JSON tak
             // punya pola list (dulu terbalik: hardcode selalu menang).
             _ if source_id == "mangadex" => {
-                let rest = match overlay.get(source_id) {
-                    Some(file) => GenericRestAdapter::new(http.clone())
-                        .with_source_file(file.clone()),
-                    None => GenericRestAdapter::new(http.clone()),
-                };
                 let scfg = Self::scraper_config_for("mangadex").unwrap_or(SourceConfig {
                     source_id: "mangadex".to_string(),
                     base_url: "https://api.mangadex.org".to_string(),
@@ -176,7 +179,7 @@ impl AppState {
                 ))
             }
             _ => {
-                // JSON config ter-install (ehentai/hitomi/areakomik dkk) → engine generik.
+                // JSON config (ehentai/hitomi/areakomik dkk) → engine generik.
                 if let Some(file) = overlay.get(source_id) {
                     if let Some(scraper_sec) = file.scraper.as_ref() {
                         if let Some(scfg) = crate::data::datasources::remote::source_config_from_json(
@@ -261,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "repro manual 4c.6"]
+    #[ignore = "hits live api.mangadex.org; manual: cargo test repro_md_rating -- --ignored"]
     fn repro_md_rating() {
         use crate::domain::{repositories::ContentRepository, SearchFilter};
         let state = AppState::default();
@@ -269,7 +272,7 @@ mod tests {
         for q in ["raw:contentRating[]=erotica", "raw:contentRating%5B%5D=erotica"] {
             let filter = SearchFilter { query: q.to_string(), source_id: Some("mangadex".to_string()), page: 1 };
             let items = tauri::async_runtime::block_on(async { repo.search(filter).await }).unwrap();
-            eprintln!("REPRO md q={q} -> {} item", items.len());
+            assert!(!items.is_empty(), "rating {q} kosong");
         }
     }
 

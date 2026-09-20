@@ -459,6 +459,35 @@ fn clear_placeholders(s: &str) -> String {
     }
     out
 }
+
+/// Kunci query mentah ada (pencocokan nama persis sebelum `=`, URL-decoded).
+fn has_query_key(url: &str, key: &str) -> bool {
+    let Some(q) = url.split_once('?').map(|(_, q)| q) else { return false };
+    q.split('&').any(|pair| pair.split_once('=').map(|(k, _)| k).unwrap_or(pair) == key)
+}
+
+/// Ganti total param multi-nilai (mobile `_replaceMultiValueParam`):
+/// semua kemunculan `key=` dibuang, lalu nilai baru ditempel berurutan.
+fn replace_multi_param(url: &str, key: &str, values: &[String]) -> String {
+    let (base, query) = match url.split_once('?') {
+        Some((b, q)) => (b.to_string(), q.to_string()),
+        None => (url.to_string(), String::new()),
+    };
+    let mut kept: Vec<String> = Vec::new();
+    for pair in query.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let name = pair.split_once('=').map(|(k, _)| k).unwrap_or(pair);
+        if name != key {
+            kept.push(pair.to_string());
+        }
+    }
+    for v in values {
+        kept.push(format!("{key}={}", encode_query(v)));
+    }
+    if kept.is_empty() { base } else { format!("{base}?{}", kept.join("&")) }
+}
 fn absolutize_url(base: &str, src: &str) -> String {
     if src.is_empty() {
         return String::new();
@@ -1031,9 +1060,10 @@ impl GenericRestAdapter {
         Self::parse_mangadex(&body)
     }
 
-    /// Endpoint + merge param `raw:` (mobile `_buildRawSearchUrl`):
-    /// placeholder `{k}` diisi nilai raw pertama (`{offset}` dari paging),
-    /// pasangan template berisi dipertahankan, sisanya raw menang.
+    /// Endpoint + merge param `raw:` (mobile `_buildRawSearchUrl` +
+    /// `_applyQueryRules`): placeholder `{k}` diisi nilai raw pertama
+    /// (`{offset}` dari paging), pasangan template berisi dipertahankan
+    /// (raw menimpa semua kemunculan kunci), `rawParam` = fragmen mentah.
     fn md_endpoint_raw(&self, name: &str, raw: &str, offset: &str, fallback: &str) -> String {
         let template = self
             .source_file
@@ -1053,6 +1083,7 @@ impl GenericRestAdapter {
                 .find(|(ek, ev)| ek == k && !ev.trim().is_empty())
                 .map(|(_, v)| v.clone())
         };
+        let mut raw_fragments: Vec<String> = Vec::new();
         let mut merged: Vec<(String, String)> = Vec::new();
         let mut consumed: Vec<String> = Vec::new();
         for pair in tpl_query.split('&') {
@@ -1099,14 +1130,19 @@ impl GenericRestAdapter {
             if k == "offset" || v.trim().is_empty() || consumed.iter().any(|c| c == &k) {
                 continue;
             }
-            let enc = encode_query(&v);
-            if let Some(slot) = merged.iter_mut().find(|(ek, _)| ek == &k) {
-                slot.1 = enc;
-            } else {
-                merged.push((k, enc));
+            if k == "rawParam" {
+                // Fragmen `order[x]=y` ditempel utuh (tanpa bungkus `rawParam=`).
+                raw_fragments.push(v);
+                continue;
             }
+            let enc = encode_query(&v);
+            // Raw menang ala mobile (`merged[key] = [value]`): SEMUA
+            // kemunculan template DIGANTI total oleh nilai raw —
+            // satu `contentRating[]=erotica` menggusur 4 default.
+            merged.retain(|(ek, _)| ek != &k);
+            merged.push((k, enc));
         }
-        let url = if merged.is_empty() {
+        let mut url = if merged.is_empty() {
             base
         } else {
             format!(
@@ -1114,10 +1150,72 @@ impl GenericRestAdapter {
                 merged.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&")
             )
         };
+        if !raw_fragments.is_empty() {
+            let sep = if url.contains('?') { "&" } else { "?" };
+            url = format!("{url}{sep}{}", raw_fragments.join("&"));
+        }
         if url.starts_with("http://") || url.starts_with("https://") {
             return url;
         }
-        format!("{}{}", self.md_base(), url)
+        let url = format!("{}{}", self.md_base(), url);
+        Self::apply_query_rules(&url, self.md_query_rules("search"))
+    }
+
+    /// Aturan `api.queryRules[scope]` dari JSON (mobile `_applyQueryRules`).
+    fn md_query_rules(&self, scope: &str) -> Option<serde_json::Value> {
+        self.source_file.as_ref().and_then(|f| {
+            f.api.as_ref()?.query_rules.get(scope).cloned()
+        })
+    }
+
+    /// `ensureParams` (tambah bila hilang), `enforceMultiValueParams`
+    /// (ganti total), `ensureMultiValueParamsIfMissing` (tambah bila hilang).
+    fn apply_query_rules(url: &str, rules: Option<serde_json::Value>) -> String {
+        let Some(rules) = rules else { return url.to_string() };
+        let Some(obj) = rules.as_object() else { return url.to_string() };
+        let str_list = |v: &serde_json::Value| -> Vec<String> {
+            v.as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|e| e.as_str().map(str::to_string))
+                        .filter(|s| !s.trim().is_empty())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let mut out = url.to_string();
+        if let Some(enforce) = obj.get("enforceMultiValueParams").and_then(|v| v.as_object()) {
+            for (key, vals) in enforce {
+                let values = str_list(vals);
+                if values.is_empty() {
+                    continue;
+                }
+                out = replace_multi_param(&out, key, &values);
+            }
+        }
+        if let Some(ensure) = obj.get("ensureParams").and_then(|v| v.as_object()) {
+            for (key, val) in ensure {
+                let s = val.as_str().unwrap_or(&val.to_string()).trim().to_string();
+                if s.is_empty() || has_query_key(&out, key) {
+                    continue;
+                }
+                let sep = if out.contains('?') { "&" } else { "?" };
+                out = format!("{out}{sep}{key}={}", encode_query(&s));
+            }
+        }
+        if let Some(ensure_multi) = obj.get("ensureMultiValueParamsIfMissing").and_then(|v| v.as_object()) {
+            for (key, vals) in ensure_multi {
+                let values = str_list(vals);
+                if values.is_empty() || has_query_key(&out, key) {
+                    continue;
+                }
+                for v in values {
+                    let sep = if out.contains('?') { "&" } else { "?" };
+                    out = format!("{out}{sep}{key}={}", encode_query(&v));
+                }
+            }
+        }
+        out
     }
 
     /// Detail satu manga via API (`/manga/{id}`).
@@ -1801,6 +1899,71 @@ mod tests {
         assert_eq!(items[1].cover_url, "https://t.example/2t.webp");
     }
 
+    fn mangadex_configured(http: HttpClientManager, base: &str, search_tpl: &str) -> GenericRestAdapter {
+        use crate::data::datasources::config::{ApiSection, SourceFile};
+        use std::collections::HashMap;
+        let mut endpoints = HashMap::new();
+        endpoints.insert("search".to_string(), serde_json::Value::String(search_tpl.to_string()));
+        let file = SourceFile {
+            source: "mangadex".to_string(),
+            version: "test".to_string(),
+            base_url: base.to_string(),
+            default_language: String::new(),
+            api: Some(ApiSection {
+                enabled: true,
+                api_base: base.to_string(),
+                endpoints,
+                detail: serde_json::Value::Null,
+                images: serde_json::Value::Null,
+                query_rules: serde_json::Value::Null,
+            }),
+            network: None,
+            scraper: None,
+            asset_hosts: std::collections::HashMap::new(),
+            navigation: serde_json::Value::Null,
+            search_form: serde_json::Value::Null,
+        };
+        GenericRestAdapter::new(http).with_source_file(file)
+    }
+
+    #[test]
+    fn raw_overrides_all_template_values_single_query() {
+        // Bug contentRating: raw satu nilai harus ganti SEMUA default
+        // template (mobile `merged[key] = value`), bukan hanya kemunculan 1.
+        let http = HttpClientManager::without_proxy().unwrap();
+        let tpl = "/manga?contentRating[]=safe&contentRating[]=suggestive&limit=100&offset={offset}";
+        let adapter = mangadex_configured(http, "https://api.mangadex.org", tpl);
+        let url = adapter.md_endpoint_raw("search", "contentRating[]=erotica", "0", tpl);
+        assert_eq!(url.matches("contentRating[]=").count(), 1, "{url}");
+        assert!(url.contains("contentRating[]=erotica"), "{url}");
+        assert!(url.contains("limit=100"), "{url}");
+    }
+
+    #[test]
+    fn raw_param_fragment_appends_literally() {
+        // Sort `rawParam=order[x]=y` ditempel utuh ala mobile
+        // (`_rebuildUrlWithQueryParams`), bukan `rawParam=...`.
+        let http = HttpClientManager::without_proxy().unwrap();
+        let tpl = "/manga?limit=100&offset={offset}";
+        let adapter = mangadex_configured(http, "https://api.mangadex.org", tpl);
+        let url = adapter.md_endpoint_raw("search", "rawParam=order[rating]=desc", "0", tpl);
+        assert!(url.contains("order[rating]=desc"), "{url}");
+        assert!(!url.contains("rawParam="), "{url}");
+    }
+
+    #[test]
+    fn query_rules_ensure_and_enforce() {
+        use serde_json::json;
+        let rules = json!({
+            "ensureParams": {"hasAvailableChapters": "true"},
+            "enforceMultiValueParams": {"availableTranslatedLanguage[]": []},
+            "ensureMultiValueParamsIfMissing": {"contentRating[]": ["safe"]}
+        });
+        let url = GenericRestAdapter::apply_query_rules("https://x.example/manga?limit=5", Some(rules));
+        assert!(url.contains("hasAvailableChapters=true"), "{url}");
+        assert!(url.contains("contentRating[]=safe"), "{url}");
+    }
+
     #[test]
     fn rest_parses_mangadex_fixture() {
         let base = spawn_fixture();
@@ -1901,6 +2064,7 @@ pub struct NhentaiApiAdapter {
     limiter: crate::application::services::RateLimiter,
     search_tpl: String,
     all_tpl: String,
+    tag_tpl: String,
     detail_tpl: String,
     thumb_host: String,
     img_host: String,
@@ -1939,6 +2103,7 @@ impl NhentaiApiAdapter {
             limiter: crate::application::services::RateLimiter::new(cfg.min_delay_ms()),
             search_tpl: ep("search", "/api/v2/search?query={query}&sort={sort}&page={page}"),
             all_tpl: ep("allGalleries", "/api/v2/galleries?page={page}"),
+            tag_tpl: ep("tagSearch", "/api/v2/galleries/tagged?tag_id={tagId}&page={page}"),
             detail_tpl: ep("galleryDetail", "/api/v2/galleries/{id}"),
             thumb_host: host("thumbnail", "https://t.nhentai.net"),
             img_host: host("image", "https://i.nhentai.net"),
@@ -1996,20 +2161,55 @@ impl NhentaiApiAdapter {
         })
     }
 
-    pub async fn search(&self, query: &str, page: u32) -> Result<Vec<ContentModel>, AppError> {
-        // API menolak query kosong (400) → home feed pakai allGalleries.
-        let url = if query.trim().is_empty() {
-            crate::data::datasources::config::fill_url(&self.all_tpl.clone(), &[("page", &page.max(1).to_string())])
-        } else {
-            crate::data::datasources::config::fill_url(
-                &self.search_tpl.clone(),
-                &[
-                    ("query", &query.replace(' ', "+")),
-                    ("sort", "popular"),
-                    ("page", &page.max(1).to_string()),
-                ],
-            )
+    /// URL search murni: payload `raw:k=v&..` dari form filter diurai
+    /// (ala mobile `_searchRaw`) — `raw:` harfiah JANGAN dikirim sebagai
+    /// kueri (API membalas 0 hasil). `tag_id` → endpoint `tagSearch`.
+    fn search_url(&self, query: &str, page: u32) -> String {
+        let page = page.max(1).to_string();
+        let fill = crate::data::datasources::config::fill_url;
+        let plain = |q: &str| {
+            if q.trim().is_empty() {
+                // API menolak query kosong (400) → home feed pakai allGalleries.
+                fill(&self.all_tpl.clone(), &[("page", &page)])
+            } else {
+                fill(
+                    &self.search_tpl.clone(),
+                    &[
+                        ("query", &q.replace(' ', "+")),
+                        ("sort", "popular"),
+                        ("page", &page),
+                    ],
+                )
+            }
         };
+        let raw = match query.strip_prefix("raw:") {
+            Some(r) => r,
+            None => return plain(query),
+        };
+        let pairs = parse_raw_params(raw);
+        if let Some(tag_id) = raw_first(&pairs, &["tag_id", "tagId"]) {
+            if !tag_id.trim().is_empty() {
+                return fill(
+                    &self.tag_tpl.clone(),
+                    &[("tagId", tag_id.trim()), ("tag_id", tag_id.trim()), ("page", &page)],
+                );
+            }
+        }
+        let q = raw_query_value(&pairs, "query");
+        if q.trim().is_empty() {
+            return fill(&self.all_tpl.clone(), &[("page", &page)]);
+        }
+        let sort = raw_first(&pairs, &["sort", "order"])
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "popular".to_string());
+        fill(
+            &self.search_tpl.clone(),
+            &[("query", &q.replace(' ', "+")), ("sort", &sort), ("page", &page)],
+        )
+    }
+
+    pub async fn search(&self, query: &str, page: u32) -> Result<Vec<ContentModel>, AppError> {
+        let url = self.search_url(query, page);
         let v = self.fetch(&url).await?;
         Ok(Self::items_of(&v)
             .iter()
@@ -2345,6 +2545,29 @@ mod nhentai_tests {
         let a = NhentaiApiAdapter::from_config(HttpClientManager::without_proxy().unwrap(), &cfg);
         assert!(a.search_tpl.contains("/api/v2/search"));
         assert_eq!(a.thumb_host, "https://t.nhentai.net");
+    }
+
+    #[test]
+    fn raw_filter_builds_correct_search_url() {
+        // Regresi: form filter kirim `raw:query=..&sort=..`; adapter lama
+        // meng-encode harfiah `raw:..` sebagai kueri → API balas 0 hasil.
+        let a = test_adapter();
+        let u = a.search_url("raw:query=Language%3Aenglish", 1);
+        assert!(u.contains("query=Language%3Aenglish"), "{u}");
+        assert!(u.contains("sort=popular"), "{u}");
+        assert!(!u.contains("raw%3A"), "{u}");
+        let u = a.search_url("raw:query=yuri&sort=popular-today", 2);
+        assert!(u.contains("query=yuri"), "{u}");
+        assert!(u.contains("sort=popular-today"), "{u}");
+        assert!(u.contains("page=2"), "{u}");
+        // Tap-tag (`tagQueryMapping` → `raw:tag_id=N`) pakai endpoint tagged.
+        let u = a.search_url("raw:tag_id=12227", 1);
+        assert!(u.contains("tagged?tag_id=12227"), "{u}");
+        // Jalur lama tak berubah: teks polos + kosong → allGalleries.
+        assert!(a.search_url("test", 1).contains("query=test"));
+        assert!(a.search_url("", 1).contains("/api/v2/galleries?page=1"));
+        // raw tanpa query (cuma sort) → allGalleries, hindari 400.
+        assert!(a.search_url("raw:sort=date", 1).contains("/api/v2/galleries?page=1"));
     }
 
     #[test]
