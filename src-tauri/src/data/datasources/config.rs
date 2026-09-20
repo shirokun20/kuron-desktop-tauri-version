@@ -1,5 +1,6 @@
 //! Config-driven sources — port `informations/configs/*.json` + `assets/configs/`
-//! mobile (44+1 file, dibundel di `src-tauri/resources/source-configs/`).
+//! mobile. Bundle hanya `nhentai-config.json`; sumber lain (mangadex/ehentai/
+//! hitomi/…) di-install dari repo ekstensi ke dir data aplikasi.
 //! Struct toleran: field tak dikenal diabaikan; `scraper/selectors/searchForm`
 //! penuh ditahan sebagai `serde_json::Value` untuk port lanjutan.
 
@@ -361,9 +362,9 @@ pub struct SourceConfigs {
 }
 
 impl SourceConfigs {
-    /// Dir config bawaan: `nhentai` + adapter bawaan (`mangadex`, `ehentai`,
-    /// `hitomi`) agar search/filter config-driven out-of-the-box;
-    /// overlay ekstensi (`load_overlay`) tetap menang atas bundle.
+    /// Dir config bawaan: HANYA `nhentai`. Sumber lain **config-driven** —
+    /// tidak dibundel, datang dari install Ekstensi (`kuron-extensions`)
+    /// lewat `load_overlay` (installed menang atas bundled).
     pub fn bundled_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/source-configs")
     }
@@ -437,27 +438,46 @@ impl SourceConfigs {
 mod tests {
     use super::*;
 
-    #[test]
-    fn bundled_core_configs_and_overlay_wins() {
-        // Bundle: nhentai + adapter bawaan (mangadex/ehentai/hitomi).
-        let bundled = SourceConfigs::load_dir(&SourceConfigs::bundled_dir()).unwrap();
-        assert_eq!(bundled.len(), 4, "bundle wajib 4 config inti");
-        let nh = bundled.get("nhentai").expect("nhentai bawaan");
-        assert_eq!(nh.base_url, "https://nhentai.net");
-        assert!(bundled.get("mangadex").is_some(), "mangadex bawaan (tags + rating)");
-        // Overlay: installed menimpa bundled bila id sama.
-        let dir = std::env::temp_dir().join(format!("kuron-test-ov-{}", std::process::id()));
+    /// Config fixture di dir temp (config-driven: hanya `nhentai` yang
+    /// dibundel; sumber lain datang dari Ekstensi).
+    fn write_fixture(tag: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("kuron-test-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("nhentai-config.json"),
-            r#"{"source": "nhentai", "version": "9.9.9", "baseUrl": "https://mirror.example"}"#,
-        )
-        .unwrap();
+        for (name, body) in files {
+            std::fs::write(dir.join(name), body).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn bundled_nhentai_only_and_overlay_wins() {
+        // Config-driven: bundle HANYA nhentai; mangadex/ehentai/hitomi
+        // di-install lewat Ekstensi (`kuron-extensions`) → overlay.
+        let bundled = SourceConfigs::load_dir(&SourceConfigs::bundled_dir()).unwrap();
+        assert_eq!(bundled.len(), 1, "bundle wajib hanya nhentai");
+        let nh = bundled.get("nhentai").expect("nhentai bawaan");
+        assert_eq!(nh.base_url, "https://nhentai.net");
+        assert!(bundled.get("mangadex").is_none(), "mangadex tak dibundel");
+        // Overlay: installed menimpa bundled bila id sama + menambah id baru.
+        let dir = write_fixture(
+            "ov",
+            &[
+                (
+                    "nhentai-config.json",
+                    r#"{"source": "nhentai", "version": "9.9.9", "baseUrl": "https://mirror.example"}"#,
+                ),
+                (
+                    "mangadex-config.json",
+                    r#"{"source": "mangadex", "version": "1.1.10", "baseUrl": "https://api.mangadex.org"}"#,
+                ),
+            ],
+        );
         let merged =
             SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &dir).unwrap();
-        assert_eq!(merged.len(), 4);
+        assert_eq!(merged.len(), 2);
         assert_eq!(merged.get("nhentai").unwrap().version, "9.9.9");
+        assert_eq!(merged.get("mangadex").unwrap().version, "1.1.10");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -465,8 +485,23 @@ mod tests {
     fn search_form_params_keep_config_order() {
         // Urutan field 1:1 mobile (Dart Map = insertion order); butuh fitur
         // serde_json/preserve_order (tanpa itu BTreeMap = alfabetis).
-        let bundled = SourceConfigs::load_dir(&SourceConfigs::bundled_dir()).unwrap();
-        let md = bundled.get("mangadex").expect("mangadex bawaan");
+        // Config mangadex hidup di repo ekstensi, jadi di sini diuji
+        // MEKANISME urutannya dengan fixture urutan non-alfabetis.
+        let dir = write_fixture(
+            "order",
+            &[(
+                "mangadex-config.json",
+                r#"{"source": "mangadex", "version": "fixture", "baseUrl": "https://api.mangadex.org",
+                    "searchForm": {"params": {
+                        "title": {"type": "text"},
+                        "excludedTagsMode": {"type": "select"},
+                        "status": {"type": "select"},
+                        "availableTranslatedLanguage": {"type": "multiselect"}
+                    }}}"#,
+            )],
+        );
+        let cfgs = SourceConfigs::load_dir(&dir).unwrap();
+        let md = cfgs.get("mangadex").expect("mangadex fixture");
         let params = md
             .search_form
             .get("params")
@@ -477,22 +512,12 @@ mod tests {
             keys,
             vec![
                 "title",
-                "includedTag",
-                "excludedTag",
-                "includedTagsMode",
                 "excludedTagsMode",
                 "status",
-                "publicationDemographic",
-                "contentRating",
-                "year",
-                "createdAtSince",
-                "updatedAtSince",
-                "sort",
-                "hasAvailableChapters",
-                "originalLanguage",
-                "availableTranslatedLanguage",
+                "availableTranslatedLanguage"
             ]
         );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -8,6 +8,7 @@
     "build:frontend": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "node --test src/lib/stores/filterPersist.test.ts src/lib/api/platform.test.ts",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build"

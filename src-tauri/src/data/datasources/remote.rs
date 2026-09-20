@@ -1126,6 +1126,11 @@ impl GenericRestAdapter {
                 merged.push((k.to_string(), out_val));
             }
         }
+        // Raw menang ala mobile (`merged[key] = SEMUA nilai`): kunci raw
+        // menggusur kemunculan TEMPLATE, tapi nilai raw sendiri menumpuk
+        // utuh (multi-value: 4 excludedTags[] tetap 4, bukan 1 terakhir).
+        let mut raw_keys: Vec<String> = Vec::new();
+        let mut raw_out: Vec<(String, String)> = Vec::new();
         for (k, v) in raw_pairs {
             if k == "offset" || v.trim().is_empty() || consumed.iter().any(|c| c == &k) {
                 continue;
@@ -1135,13 +1140,13 @@ impl GenericRestAdapter {
                 raw_fragments.push(v);
                 continue;
             }
-            let enc = encode_query(&v);
-            // Raw menang ala mobile (`merged[key] = [value]`): SEMUA
-            // kemunculan template DIGANTI total oleh nilai raw —
-            // satu `contentRating[]=erotica` menggusur 4 default.
-            merged.retain(|(ek, _)| ek != &k);
-            merged.push((k, enc));
+            if !raw_keys.contains(&k) {
+                raw_keys.push(k.clone());
+            }
+            raw_out.push((k, encode_query(&v)));
         }
+        merged.retain(|(ek, _)| !raw_keys.contains(ek));
+        merged.extend(raw_out);
         let mut url = if merged.is_empty() {
             base
         } else {
@@ -1962,6 +1967,77 @@ mod tests {
         let url = GenericRestAdapter::apply_query_rules("https://x.example/manga?limit=5", Some(rules));
         assert!(url.contains("hasAvailableChapters=true"), "{url}");
         assert!(url.contains("contentRating[]=safe"), "{url}");
+    }
+
+    /// Fixture config MangaDex — salinan bagian relevan `mangadex-config.json`
+    /// `kuron-extensions` 1.1.10 (`api.endpoints.search` + `api.queryRules.search`).
+    /// Config asli TIDAK dibundel (config-driven → dari Ekstensi), jadi
+    /// paritas diuji deterministik lewat fixture ini.
+    const MANGADEX_FIXTURE: &str = r#"{
+        "source": "mangadex",
+        "version": "1.1.10",
+        "baseUrl": "https://api.mangadex.org",
+        "api": {
+            "enabled": true,
+            "endpoints": {
+                "search": "/manga?title={query}&limit=100&offset={offset}&includes[]=cover_art&includes[]=author&includes[]=artist&contentRating[]=erotica&contentRating[]=pornographic&contentRating[]=suggestive&contentRating[]=safe&hasAvailableChapters=true"
+            },
+            "queryRules": {
+                "search": {
+                    "enforceMultiValueParams": {"availableTranslatedLanguage[]": []},
+                    "ensureParams": {"hasAvailableChapters": "true"}
+                }
+            }
+        }
+    }"#;
+
+    /// Adapter REST dari fixture config (temp dir ditulis → dibaca → dihapus).
+    fn fixture_mangadex_adapter(tag: &str) -> GenericRestAdapter {
+        use crate::data::datasources::config::SourceConfigs;
+        let dir = std::env::temp_dir().join(format!("kuron-test-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("mangadex-config.json"), MANGADEX_FIXTURE).unwrap();
+        let cfgs = SourceConfigs::load_dir(&dir).unwrap();
+        let file = cfgs.get("mangadex").expect("mangadex fixture").clone();
+        let _ = std::fs::remove_dir_all(&dir);
+        let http = HttpClientManager::without_proxy().unwrap();
+        GenericRestAdapter::new(http).with_source_file(file)
+    }
+
+    #[test]
+    fn user_filter_query_builds_full_mangadex_url() {
+        // Paritas mobile untuk query filter nyata user (4 excludedTags +
+        // mode OR + 5 originalLanguage + 2 availableTranslated + order).
+        //
+        // Regresi yang dijaga: dulu merge raw pakai `retain(ek != k)` per
+        // nilai → kunci multi-value tinggal NILAI TERAKHIR
+        // (`originalLanguage[]=zh-hk` saja). Live API: URL itu hanya
+        // mengembalikan manga zh-hk (total 263), sedangkan URL di bawah
+        // (utuh, ala mobile) total 43.304 — inilah "data beda" mobile vs
+        // desktop. Sekarang URL wajib EKSAK sama dengan hasil mobile.
+        let adapter = fixture_mangadex_adapter("md-parity");
+        let raw = "excludedTags%5B%5D=5920b825-4181-4a17-beeb-9918b0ff7a30&excludedTags%5B%5D=a3c67850-4684-404e-9b7f-c69850ee5da6&excludedTags%5B%5D=2d1f5d56-a1e5-4d0d-a961-2193588b08ec&excludedTags%5B%5D=ddefd648-5140-4e5f-ba18-4eca4071d19b&excludedTagsMode=OR&originalLanguage%5B%5D=id&originalLanguage%5B%5D=en&originalLanguage%5B%5D=ja&originalLanguage%5B%5D=zh&originalLanguage%5B%5D=zh-hk&availableTranslatedLanguage%5B%5D=id&availableTranslatedLanguage%5B%5D=en&order[latestUploadedChapter]=desc";
+        let url = adapter.md_endpoint_raw("search", raw, "0", "https://api.mangadex.org/manga");
+        let expected = concat!(
+            "https://api.mangadex.org/manga?limit=100&offset=0",
+            "&includes[]=cover_art&includes[]=author&includes[]=artist",
+            "&contentRating[]=erotica&contentRating[]=pornographic",
+            "&contentRating[]=suggestive&contentRating[]=safe",
+            "&hasAvailableChapters=true",
+            "&excludedTags[]=5920b825-4181-4a17-beeb-9918b0ff7a30",
+            "&excludedTags[]=a3c67850-4684-404e-9b7f-c69850ee5da6",
+            "&excludedTags[]=2d1f5d56-a1e5-4d0d-a961-2193588b08ec",
+            "&excludedTags[]=ddefd648-5140-4e5f-ba18-4eca4071d19b",
+            "&excludedTagsMode=OR",
+            "&originalLanguage[]=id&originalLanguage[]=en",
+            "&originalLanguage[]=ja&originalLanguage[]=zh",
+            "&originalLanguage[]=zh-hk",
+            "&availableTranslatedLanguage[]=id",
+            "&availableTranslatedLanguage[]=en",
+            "&order[latestUploadedChapter]=desc"
+        );
+        assert_eq!(url, expected);
     }
 
     #[test]

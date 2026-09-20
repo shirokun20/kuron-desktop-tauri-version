@@ -11,5 +11,7 @@
     "noEmit": true,
     "types": ["vite/client"]
   },
-  "include": ["src/**/*.d.ts", "src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
+  "include": ["src/**/*.d.ts", "src/**/*.ts", "src/**/*.svelte", "vite.config.ts"],
+  // Test node:test (type-stripping) dikecualikan dari svelte-check.
+  "exclude": ["**/*.test.ts"]
 }

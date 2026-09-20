@@ -3,7 +3,8 @@
   // Hero pulse + pill versi live, kartu pembaruan (GitHub releases desktop),
   // menu Komunitas & Info (akordeon: lisensi/legal/FAQ/donasi), chips stack, footer.
   import { onMount } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { api } from "../api/client";
+  import type { AppInfo } from "../domain/types";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { marked } from "marked";
   import logoApp from "../../assets/icons/logo_app.webp";
@@ -60,7 +61,9 @@
   };
 
   onMount(() => {
-    invoke<AppInfo>("cmd_app_info")
+    // `api.appInfo()` juga menjawab di mode web (tanpa backend Rust).
+    api
+      .appInfo()
       .then((r) => (info = r))
       .catch(() => {});
     Promise.all([termsMd, privacyMd, faqMd].map((m) => marked.parse(m))).then(

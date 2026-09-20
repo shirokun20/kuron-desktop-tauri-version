@@ -2,17 +2,27 @@
   // FilterPage — Layar Search mobile (form per-sumber, teks PALING ATAS).
   // Port DynamicFormSearchUI: label manusiawi, _formatFieldValue
   // (transform/quote/prefix/suffix), split koma, joinMode, preview query.
-  // Submit → `raw:..` via event 'filter-submit' → tutup diri.
+  // Submit → `raw:..`; dua jalur dengan hasil sama:
+  //  - popup window native (desktop) → event 'filter-submit' + tutup window
+  //  - overlay in-app (web/mobile) → callback `onSubmit` + `onClose`
   import { onMount } from "svelte";
   import { emit } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { isTauriRuntime } from "../api/platform";
   import { api } from "../api/client";
   import { sourceStore } from "../stores/source.svelte";
+  import {
+    clearSavedFilter,
+    loadSavedFilter,
+    saveFilter,
+  } from "../stores/filterPersist";
 
   type Props = {
     onClose?: () => void | Promise<void>;
+    /** Overlay in-app: hasil submit diantar langsung (tanpa event Tauri). */
+    onSubmit?: (payload: { query: string; label: string }) => void | Promise<void>;
   };
-  let { onClose }: Props = $props();
+  let { onClose, onSubmit }: Props = $props();
 
   type Option = { value: string; label: string; group?: string };
 
@@ -74,10 +84,23 @@
       // Backend: `{params, dataSources}` langsung ATAU `{searchForm: {...}}`.
       form = (raw?.params ? raw : raw?.searchForm ?? raw) as Record<string, any> | null;
       for (const [key] of visibleEntries()) openGroups[key] = true;
+      const saved = loadSavedFilter(sourceStore.current, form?.params ?? {});
+      if (saved) values = saved.values;
     } catch (e) {
       error = `gagal muat form: ${e}`;
     }
   }
+
+  // Autosave: tiap values berubah langsung tersimpan (tutup tanpa Cari
+  // tetap ter-restore; query hanya ditulis saat submit).
+  let lastSnap = "{}";
+  $effect(() => {
+    const snap = JSON.stringify(values);
+    if (form && snap !== lastSnap) {
+      lastSnap = snap;
+      saveFilter(sourceStore.current, { values }, form?.params ?? {});
+    }
+  });
 
   async function reload() {
     reloading = true;
@@ -399,9 +422,19 @@
 
   function reset() {
     values = {};
+    clearSavedFilter(sourceStore.current);
+  }
+
+  /** Mode web: halaman hash (#filter dkk) ditutup dengan kembali ke root. */
+  function leaveHashRoute() {
+    if (window.location.hash) window.location.hash = "";
   }
 
   async function closeWindow() {
+    if (!isTauriRuntime()) {
+      leaveHashRoute();
+      return;
+    }
     try {
       await (await getCurrentWindow()).close();
     } catch {
@@ -421,15 +454,25 @@
     e.preventDefault();
     const parts = buildParts();
     if (!parts.length) return;
+    const query = `raw:${parts.join("&")}`;
     const texts = orderedEntries()
       .filter(([, d]) => d?.type === "text")
       .map(([k]) => (typeof values[k] === "string" ? (values[k] as string).trim() : ""))
       .filter(Boolean);
+    const label = texts[0] || `${parts.length} kriteria`;
+    saveFilter(
+      sourceStore.current,
+      { values, query, label },
+      form?.params ?? {},
+    );
+    // Overlay in-app (web/mobile): antar langsung ke pemanggil, tak ada event.
+    if (onSubmit) {
+      await onSubmit({ query, label });
+      await close();
+      return;
+    }
     try {
-      await emit("filter-submit", {
-        query: `raw:${parts.join("&")}`,
-        label: texts[0] || `${parts.length} kriteria`,
-      });
+      await emit("filter-submit", { query, label });
     } catch (e) {
       error = `emit gagal: ${e}`;
       return;
@@ -686,12 +729,30 @@
             {mc.inc} dipilih
           {/if}
         </p>
-        <input
-          type="text"
-          class="search"
-          placeholder={pickerSearchHint()}
-          bind:value={pickerQuery}
-        />
+        <label class="search-wrap">
+          <span class="search-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+          </span>
+          <input
+            type="text"
+            class="search"
+            placeholder={pickerSearchHint()}
+            bind:value={pickerQuery}
+          />
+          {#if pickerQuery}
+            <button
+              type="button"
+              class="search-clear"
+              title="Bersihkan"
+              onclick={() => (pickerQuery = "")}
+            >
+              ✕
+            </button>
+          {/if}
+        </label>
         {#if merr}
           <p class="err ds-err">
             {merr}
@@ -1087,20 +1148,53 @@
     font-size: 13px;
     color: var(--muted-foreground);
   }
-  .search {
+  .search-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin: 0 16px 4px;
-    height: 40px;
-    padding: 0 12px;
+    padding: 0 6px 0 12px;
     border-radius: var(--radius);
     border: 1px solid var(--input);
     background: var(--muted);
-    color: inherit;
-    font-size: 14px;
   }
-  .search:focus {
-    outline: none;
+  .search-wrap:focus-within {
     border-color: var(--primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+  }
+  .search-icon {
+    display: inline-flex;
+    color: var(--muted-foreground);
+    flex-shrink: 0;
+  }
+  .search-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+  .search {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 14px;
+    outline: none;
+  }
+  .search-clear {
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 6px 8px;
+    flex-shrink: 0;
+  }
+  .search-clear:hover {
+    color: var(--foreground);
+    background: color-mix(in srgb, var(--foreground) 10%, transparent);
   }
   .sheet-body {
     overflow-y: auto;

@@ -5,14 +5,15 @@
   import { contentStore } from "../stores/content.svelte";
   import { helloStore } from "../stores/hello.svelte";
   import { sourceStore } from "../stores/source.svelte";
-  import { isTauriRuntime, openAboutWindow, openExtensionManager, openFilterWindow } from "../api/window";
+  import { clearSavedQuery, loadSavedQuery } from "../stores/filterPersist";
+  import { overlayStore } from "../stores/overlay.svelte";
+  import { platformStore } from "../stores/platform.svelte";
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import Sidebar from "../components/Sidebar.svelte";
   import ThemeToggle from "../components/ThemeToggle.svelte";
   import MainFeaturedCard from "../components/MainFeaturedCard.svelte";
   import MainGridCard from "../components/MainGridCard.svelte";
-  import FilterPage from "./FilterPage.svelte";
 
   const ICONS = {
     home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>',
@@ -52,36 +53,36 @@
   ];
 
   let activeNav = $state("home");
+  // Desktop: `collapsed` = sidebar mini. Mobile (layar sempit): `drawerOpen`.
   let collapsed = $state(false);
-  let filterOpen = $state(false);
-  let navError = $state<string | null>(null);
+  let drawerOpen = $state(false);
   let version = $derived(helloStore.info?.version ?? "0.1.0");
-  // Search = SATU tombol → bottom sheet form sumber (mobile: SearchScreen).
-  async function openFilter() {
-    navError = null;
-    if (isTauriRuntime()) {
-      navError = await openFilterWindow();
-      return;
-    }
-    filterOpen = true;
+
+  /** Hamburger: mini-sidebar di layar lebar, drawer di layar sempit. */
+  function toggleSidebar() {
+    if (platformStore.narrow) drawerOpen = !drawerOpen;
+    else collapsed = !collapsed;
   }
 
-  // "Tentang"/"Ekstensi" buka popup window native (bukan ganti konten main).
+  // SATU pintu tap untuk Sumber/Filter/Tentang/Ekstensi: `overlayStore` yang
+  // memilih popup window native (desktop Tauri layar lebar) atau overlay
+  // in-app (web & mobile) — lihat `stores/overlay.svelte`.
+  async function openFilter() {
+    await overlayStore.open("filter");
+  }
+
+  // "Tentang"/"Ekstensi" muncul sebagai overlay/popup, bukan ganti panel nav.
   async function selectNav(id: string) {
-    if (id === "about") {
-      navError = await openAboutWindow();
+    drawerOpen = false;
+    if (id === "about" || id === "extensions") {
+      await overlayStore.open(id);
       return;
     }
-    if (id === "extensions") {
-      navError = await openExtensionManager();
-      return;
-    }
-    navError = null;
     activeNav = id;
   }
 
   onMount(() => {
-    listen("toggle-sidebar", () => (collapsed = !collapsed)).catch(() => {
+    listen("toggle-sidebar", () => toggleSidebar()).catch(() => {
       // mode browser: event Tauri tidak ada
     });
     listen("reload-page", () => window.location.reload()).catch(() => {
@@ -89,26 +90,55 @@
     });
   });
 
-  // Feed ikut sumber aktif (termasuk hasil install ekstensi).
+  // Overlay apa pun (mis. "Pilih Sumber" dari sidebar) menutup drawer mobile.
   $effect(() => {
-    contentStore.load(sourceStore.current);
+    if (overlayStore.kind) drawerOpen = false;
   });
+
+  // Feed ikut sumber aktif (termasuk hasil install ekstensi).
+  // Sumber yang punya pencarian tersimpan (`kuron.filter.<source>`) langsung
+  // dibuka dalam mode itu — termasuk saat aplikasi baru dijalankan / window
+  // baru; tanpa simpanan → beranda.
+  $effect(() => {
+    const s = sourceStore.current;
+    const saved = loadSavedQuery(s);
+    if (saved) contentStore.search(s, saved.query, saved.label);
+    else contentStore.load(s);
+  });
+
+  // "✕ Bersihkan": keluar dari mode pencarian DAN buang query tersimpannya
+  // (nilai form tetap tersimpan) — supaya pencarian tak muncul lagi saat app
+  // dibuka ulang atau sumber ditukar-balikkan.
+  function clearSearch() {
+    clearSavedQuery(sourceStore.current);
+    contentStore.clearSearch();
+  }
 </script>
 
-<div class="shell">
-  <Sidebar
-    groups={GROUPS}
-    active={activeNav}
-    {collapsed}
-    source={sourceStore.currentLabel}
-    {version}
-    onSelect={selectNav}
-    onToggle={() => (collapsed = !collapsed)}
-  />
+<div class="shell" class:narrow={platformStore.narrow}>
+  {#if platformStore.narrow && drawerOpen}
+    <button
+      class="drawer-backdrop"
+      type="button"
+      onclick={() => (drawerOpen = false)}
+      aria-label="Tutup menu"
+    ></button>
+  {/if}
+  <div class="sidebar-slot" class:hidden-narrow={platformStore.narrow && !drawerOpen}>
+    <Sidebar
+      groups={GROUPS}
+      active={activeNav}
+      collapsed={platformStore.narrow ? false : collapsed}
+      source={sourceStore.currentLabel}
+      {version}
+      onSelect={selectNav}
+      onToggle={toggleSidebar}
+    />
+  </div>
 
   <div class="main-col">
     <header class="top-header">
-      <button class="icon-btn" onclick={() => (collapsed = !collapsed)} title="Toggle sidebar">
+      <button class="icon-btn" onclick={toggleSidebar} title="Toggle sidebar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
       <button class="icon-btn filter-btn" onclick={openFilter} title="Cari di {sourceStore.currentLabel}">
@@ -121,8 +151,8 @@
     </header>
 
     <main class="content">
-      {#if navError}
-        <p class="err">{navError}</p>
+      {#if overlayStore.error}
+        <p class="err">{overlayStore.error}</p>
       {/if}
       {#if contentStore.loading && contentStore.feed.length === 0}
         <p class="muted">Memuat feed…</p>
@@ -138,7 +168,7 @@
             {contentStore.searchMode === "filter" ? "Kriteria" : "Kueri"}: "{contentStore.searchLabel}"
             · {contentStore.feed.length} hasil
           </span>
-          <button class="ghost" onclick={() => contentStore.clearSearch()}>
+          <button class="ghost" onclick={clearSearch}>
             ✕ Bersihkan
           </button>
         </section>
@@ -186,25 +216,36 @@
   </div>
 </div>
 
-{#if filterOpen}
-  <div class="filter-sheet-wrap">
-    <button
-      type="button"
-      class="filter-sheet-backdrop"
-      onclick={() => (filterOpen = false)}
-      aria-label="Tutup filter"
-    ></button>
-    <section class="filter-sheet" aria-label="Filter pencarian">
-      <FilterPage onClose={() => { filterOpen = false; }} />
-    </section>
-  </div>
-{/if}
-
 <style>
   .shell {
     display: flex;
     height: 100vh;
     overflow: hidden;
+  }
+  .sidebar-slot {
+    display: flex;
+    flex-shrink: 0;
+  }
+  .hidden-narrow {
+    display: none;
+  }
+  /* Mobile (layar sempit): sidebar jadi drawer di atas konten. */
+  .shell.narrow .sidebar-slot {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.45);
+  }
+  .drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    border: 0;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.55);
+    cursor: default;
   }
   .main-col {
     flex: 1;
@@ -338,33 +379,5 @@
   }
   .err {
     color: var(--destructive);
-  }
-
-  .filter-sheet-wrap {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-  }
-  .filter-sheet-backdrop {
-    position: absolute;
-    inset: 0;
-    border: 0;
-    padding: 0;
-    background: rgba(0, 0, 0, 0.55);
-    cursor: default;
-  }
-  .filter-sheet {
-    position: relative;
-    width: min(760px, 100%);
-    max-height: min(92vh, 820px);
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-bottom: 0;
-    border-radius: 18px 18px 0 0;
-    background: var(--background);
-    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.28);
   }
 </style>

@@ -1,9 +1,12 @@
 <script lang="ts">
   // AppShell — splash -> main (ganti GoRouter, spec §16).
-  // Hash #source-picker / #about / #extensions / #filter = popup window native.
+  // Hash #source-picker / #about / #extensions / #filter = popup window native
+  // (desktop Tauri); di web & mobile isi yang sama muncul sebagai overlay
+  // in-app lewat `<OverlayHost />` (lihat `stores/overlay.svelte`).
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { routeStore } from "./lib/router/route.svelte";
+  import { platformStore } from "./lib/stores/platform.svelte";
   import { sourceStore } from "./lib/stores/source.svelte";
   import { contentStore } from "./lib/stores/content.svelte";
   import SplashScreen from "./lib/pages/SplashScreen.svelte";
@@ -12,6 +15,7 @@
   import AboutPage from "./lib/pages/AboutPage.svelte";
   import ExtensionManagerPage from "./lib/pages/ExtensionManagerPage.svelte";
   import FilterPage from "./lib/pages/FilterPage.svelte";
+  import OverlayHost from "./lib/components/OverlayHost.svelte";
 
   const hash = window.location.hash;
   const isPicker = hash === "#source-picker";
@@ -20,6 +24,8 @@
   const isFilter = hash === "#filter";
 
   onMount(() => {
+    // Snapshot platform (tauri/web + lebar layar) untuk semua keputusan tap.
+    platformStore.init();
     if (isPicker || isAbout || isExt || isFilter) return;
     listen<string>("source-selected", (e) => sourceStore.select(e.payload)).catch(() => {
       // mode browser: event Tauri tidak ada
@@ -63,6 +69,9 @@
     {/snippet}
   </svelte:boundary>
 {/if}
+
+<!-- Overlay in-app (web & mobile): isi identik popup window native desktop. -->
+<OverlayHost />
 
 <style>
   .boot-err {

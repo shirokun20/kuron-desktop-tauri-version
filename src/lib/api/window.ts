@@ -1,19 +1,15 @@
 // Window sizing: splash kecil -> main besar (macOS frame).
 // No-op di browser (vite preview) — Tauri API tidak ada di sana.
+// Keputusan "boleh pakai window native?" ada di `api/platform.ts`.
 import { getCurrentWindow, LogicalSize, type Window } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { canUseNativeWindows } from "./platform";
 
 const SPLASH = { w: 480, h: 700 };
 const MAIN = { w: 1200, h: 800 };
 
 /** True only when the page is running inside a Tauri webview. */
-export function isTauriRuntime(): boolean {
-  if (typeof window === "undefined") return false;
-  return (
-    "__TAURI_INTERNALS__" in window ||
-    "__TAURI__" in window
-  );
-}
+export { isTauriRuntime } from "./platform";
 
 async function current(): Promise<Window | null> {
   try {
@@ -56,6 +52,11 @@ async function openPopup(
   height: number,
   fresh = false,
 ): Promise<string | null> {
+  if (!canUseNativeWindows()) {
+    // Web & mobile: jangan sentuh window API — pemanggil (overlay store)
+    // sudah seharusnya memilih jalur overlay in-app.
+    return "popup window hanya untuk desktop Tauri; web/mobile memakai overlay in-app";
+  }
   try {
     let existing = null;
     try {
@@ -131,4 +132,21 @@ export function openExtensionManager(): Promise<string | null> {
 /** Popup window native "Filter Pencarian". Selalu dibuat ulang (fresh). */
 export function openFilterWindow(): Promise<string | null> {
   return openPopup("filter", "#filter", "Filter Pencarian", 560, 720, true);
+}
+
+/** Jenis popup native — satu union untuk `stores/overlay.svelte`. */
+export type WindowPopupKind = "source" | "filter" | "about" | "extensions";
+
+/** Dispatch popup native per jenis (jalur desktop Tauri layar lebar). */
+export function openWindowPopup(kind: WindowPopupKind): Promise<string | null> {
+  switch (kind) {
+    case "source":
+      return openSourcePicker();
+    case "filter":
+      return openFilterWindow();
+    case "about":
+      return openAboutWindow();
+    case "extensions":
+      return openExtensionManager();
+  }
 }

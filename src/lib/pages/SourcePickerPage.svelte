@@ -1,11 +1,19 @@
 <script lang="ts">
-  // SourcePickerPage — window popup native "Pilih Sumber" (hash #source-picker).
-  // Pilih → emit 'source-selected' ke window main → tutup diri.
+  // SourcePickerPage — daftar sumber "Pilih Sumber". Dipakai DUA cara dengan
+  // hasil tap yang sama (`sourceStore.select`):
+  //  - popup window native (#source-picker, desktop Tauri) → emit + tutup window
+  //  - overlay in-app (web/mobile) → cukup panggil `onClose`
   import { emit } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
+  import { isTauriRuntime } from "../api/platform";
   import { sourceStore } from "../stores/source.svelte";
   import SourceList from "../components/SourceList.svelte";
+
+  type Props = {
+    onClose?: () => void | Promise<void>;
+  };
+  let { onClose }: Props = $props();
 
   let err = $state<string | null>(null);
 
@@ -13,12 +21,26 @@
     sourceStore.load();
   });
 
+  /** Mode web: halaman hash (#source-picker) ditutup dengan kembali ke root. */
+  function leaveHashRoute() {
+    if (window.location.hash) window.location.hash = "";
+  }
+
   async function pick(id: string) {
     sourceStore.select(id);
+    if (onClose) {
+      await onClose();
+      return;
+    }
+    if (!isTauriRuntime()) {
+      leaveHashRoute();
+      return;
+    }
     try {
       await emit("source-selected", id);
     } catch (e) {
       err = `emit gagal: ${e}`;
+      return;
     }
     try {
       await getCurrentWindow().close();

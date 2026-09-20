@@ -4,7 +4,9 @@
   // grup BERANDA/EXPLORE/MORE, item chevron + indikator aktif, footer versi.
   import appIcon from "../../assets/icons/app-icon.png";
   import logoApp from "../../assets/icons/logo_app.webp";
-  import { openSourcePicker } from "../api/window";
+  // Popup window native "Sumber" lewat satu pintu overlay (kondisi platform
+  // ada di store): desktop Tauri → window, web/mobile → overlay in-app.
+  import { overlayStore } from "../stores/overlay.svelte";
 
   export interface NavItem {
     id: string;
@@ -28,11 +30,10 @@
   }
 
   let { groups, active, collapsed, source, version, onSelect, onToggle }: Props = $props();
-  let pickerError = $state<string | null>(null);
 
+  // Satu pintu tap: store yang memutuskan popup window native atau overlay.
   async function openPicker() {
-    pickerError = null;
-    pickerError = await openSourcePicker();
+    await overlayStore.open("source");
   }
 
   const CHEV_RIGHT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>';
@@ -51,13 +52,13 @@
       <span class="tagline">Klien tidak resmi Nhentai</span>
     </div>
 
-    <button class="source" onclick={openPicker} title="Ganti sumber (popup window)">
+    <button class="source" onclick={openPicker} title="Ganti sumber">
       <span class="tile s">{source.slice(0, 1).toUpperCase()}</span>
       <span class="source-name">{source}</span>
       <span class="chev">{@html CHEV_EXPAND}</span>
     </button>
-    {#if pickerError}
-      <p class="picker-err">{pickerError}</p>
+    {#if overlayStore.error}
+      <p class="picker-err">{overlayStore.error}</p>
     {/if}
   {/if}
 

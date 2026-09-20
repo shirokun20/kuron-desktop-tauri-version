@@ -61,7 +61,11 @@ class SourceStore {
         })),
       ];
       this.available = metas;
-      if (!metas.some((s) => s.id === this.current)) {
+      const known = metas.some((s) => s.id === this.current);
+      // Backend menjawab daftar (non-kosong) tapi id tersimpan tak ada di
+      // sana → fallback "semua". Daftar kosong (mode web tanpa backend)
+      // JANGAN mereset pilihan user.
+      if (!known && list.length > 0) {
         this.select("semua");
       }
     } catch (e) {
