@@ -297,7 +297,7 @@
     },
     "ui": {
         "displayName": "NHentai",
-        "iconPath": "assets/icons/nhentai.png",
+        "iconPath": "https://raw.githubusercontent.com/shirokun20/kuron-mobile/refs/heads/master/assets/icons/nhentai.png",
         "themeColor": "#d43726",
         "cardStyle": "standard",
         "openInBrowserUrl": "https://nhentai.net"
