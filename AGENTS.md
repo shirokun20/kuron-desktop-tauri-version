@@ -1,65 +1,167 @@
-# Kuron Desktop — Agent Rules
+# Kuron Desktop — Agent & Developer Rules
 
-**Role**: Senior Tauri v2 + Rust + Svelte Engineer & Architect.
-**Goal**: Pure desktop `win+mac+linux` GUI dengan Clean Architecture (spec: `docs/architecture.md`).
-**Repo**: `kuron-desktop` — port dari `shirokun20/kuron-mobile` (Flutter Android).
+## Identitas proyek
 
-## 📝 Project Memory
-**CRITICAL**: Baca `MEMORY.md` di root untuk konteks penuh. Update setelah tiap sesi.
+- **Peran:** Senior Tauri v2, Rust, dan Svelte engineer.
+- **Target:** pure desktop GUI Windows, macOS, dan Linux.
+- **Stack:** Tauri v2 + Rust + Svelte 5 + TypeScript + Vite.
+- **Acuan parity:** [`shirokun20/kuron-mobile`](https://github.com/shirokun20/kuron-mobile).
+- **Arsitektur:** Clean Architecture; detail ada di [`docs/architecture.md`](docs/architecture.md).
 
-## 🚀 Commands
+Kuron Desktop bukan wrapper mobile. UI harus terasa desktop, tetapi perilaku
+source, search, filter, dan tema dipertahankan sedekat mungkin dengan Kuron Mobile.
+
+## Startup wajib
+
+Sebelum membaca atau mengubah kode:
+
+1. Baca `MEMORY.md`.
+2. Baca `openspec/changes/` dan cari change yang masih aktif.
+3. Jika ada change aktif, baca `proposal.md`, `design.md`, dan `tasks.md`.
+4. Pastikan pekerjaan yang dilakukan memang tercakup dalam task atau bug yang
+   diminta user.
+5. Periksa `git status` dan jangan menghapus perubahan user.
+
+Update `MEMORY.md` setelah sesi yang menghasilkan perubahan atau keputusan
+teknis penting.
+
+## Perintah utama
 
 ```bash
-pnpm install          # install JS deps
-pnpm dev              # tauri dev (Vite :1420 + WebView)
-pnpm build            # bundle .dmg/.msi/.AppImage
-pnpm check            # svelte-check, harus 0 errors 0 warnings
-pnpm build:frontend   # vite build -> dist/ (tanpa WebView)
+pnpm install
+pnpm dev                 # Tauri dev + Vite
+pnpm dev:frontend        # Vite saja, tanpa backend Rust
+pnpm check               # svelte-check; target 0 error, 0 warning
+pnpm test                # Node tests frontend
+pnpm build:frontend      # Vite production build
+pnpm build               # bundle installer Tauri
 
-cd src-tauri && cargo test    # unit tests Rust
-cd src-tauri && cargo check   # typecheck cepat Rust
+cargo test --manifest-path src-tauri/Cargo.toml --lib
+cargo check --manifest-path src-tauri/Cargo.toml
+cargo fmt --manifest-path src-tauri/Cargo.toml --all
+cargo clean --manifest-path src-tauri/Cargo.toml
 ```
 
-macOS desktop-only cukup CLT (`xcode-select --install`); Xcode full ~15GB
-**TIDAK wajib** kecuali sign/notarize (spec §19).
+`cargo clean` hanya menghapus artefak `src-tauri/target/`; gunakan saat cache
+build Rust membesar. Jangan menghapus source, resource, database user, atau
+folder data aplikasi untuk sekadar membersihkan project.
 
-## 🏗️ Layer Rules (spec §8–§9)
+## Workflow OpenSpec
 
-```
+Gunakan workflow OpenSpec untuk perubahan fitur atau perubahan arsitektur besar:
+
+- **Explore:** pahami masalah dan codebase; jangan mengubah kode.
+- **Propose:** buat proposal, design, spec delta, dan tasks.
+- **Apply:** implementasikan task satu per satu dan tandai task selesai.
+- **Sync:** sinkronkan delta ke main specs bila diminta.
+- **Archive:** arsipkan change hanya setelah implementasi dan validasi selesai.
+
+Jangan membuat planning Markdown baru di root. Gunakan artifact OpenSpec atau
+file session yang sesuai. Untuk bug kecil, tetap baca konteks yang relevan dan
+buat perubahan sekecil mungkin.
+
+## Aturan layer
+
+```text
 Presentation (Svelte) -> Application (Rust) -> Domain <- Data (Rust)
 ```
 
-- UI tidak import Data. UI -> `invoke('cmd_*')` -> UseCase -> Repo trait -> DataSource.
-- Domain pure: **serde + ts-rs** (ADR-004 generate). No Tauri/SQLite/reqwest.
-- Satu use case = satu file, satu method `execute`.
-- Commands thin: no logic, map `AppError -> String` di boundary.
-- `pnpm check` + `cargo test` hijau sebelum lapor selesai.
+- **Presentation:** komponen, halaman, stores, router, dan typed API bridge.
+- **Application:** use case yang mengorkestrasi alur aplikasi.
+- **Domain:** entity, value object, service, dan repository trait yang murni.
+- **Data:** datasource, HTTP, SQLite, cache, config, dan adapter konkret.
+- **Commands:** boundary IPC yang tipis; validasi boundary dan pemetaan
+  `AppError -> String` boleh dilakukan di sini.
 
-## 🎨 Theme
+Aturan keras:
 
-Warna Kuron exact dari kuron-mobile (`DESIGN.md`, `colors_const.dart`).
-Token di `src/lib/theme/tokens.ts`, var CSS `--kuron-*` + alias shadcn di
-`src/app.css`. Jangan pakai warna default shadcn/Tailwind. Mode: light | dark
-(default) via `<html data-theme>`.
+- UI tidak mengimpor Data Rust.
+- UI memakai `invoke('cmd_*')` melalui wrapper di `src/lib/api/`.
+- Domain tidak boleh bergantung pada Tauri, SQLite, reqwest, atau WebView.
+- Satu use case = satu file dan satu method `execute`.
+- Jangan menaruh business logic di command Tauri.
+- Gunakan repository trait untuk membalik dependency Data ke Domain.
+- Pertahankan type safety; hindari `as any` dan `as unknown as`.
 
-## 📁 Struktur
+## Svelte dan tema
 
-```
-src-tauri/src/  core/ domain/ application/ data/ commands/ network.rs cache.rs
-src/            main.ts App.svelte app.css assets/
-  lib/          api/ domain/ stores/ router/ theme/ components/ pages/
-```
+- Gunakan Svelte 5 runes (`$state`, `$derived`, `$effect`) sesuai pola repo.
+- Event handler mengikuti pola Svelte yang sudah dipakai project.
+- Jalankan `pnpm check` setelah perubahan frontend.
+- Gunakan token di `src/lib/theme/tokens.ts` dan alias Kuron di `src/app.css`.
+- Jangan menambahkan warna default Tailwind/shadcn jika token Kuron tersedia.
+- Mode tema yang didukung: `light` dan `dark`; pertahankan atribut
+  `<html data-theme>`.
+- Browser mode harus tetap aman tanpa backend Tauri; jangan memanggil invoke
+  secara diam-diam dari browser.
+- Overlay in-app dipakai untuk browser/mobile viewport; native window hanya
+  jika runtime Tauri dan alur memang membutuhkannya.
 
-Frontend SPA dulu; SvelteKit file-routing Fase 4. Types Rust->TS manual
-selama Fase 0 (`ts-rs` generate nyusul ADR-004).
+## Config-driven source system
 
-## 📦 Assets
+Source search/filter harus berasal dari config, bukan hardcode per situs.
+Perhatikan:
 
-Dari `learn_flutter/nhasixapp/assets/`: `logo_app.webp`, `frame.webp`,
-`donation_qris.jpeg` (151KB, dipakai About → Dukung Pengembang),
-`legal/id/*.md` (diadaptasi ke desktop: sumber NHentai/Hitomi/E-Hentai/MangaDex,
-path Pengaturan mobile dihapus, kontak → repo desktop),
-fonts Komika/Bangers/KosugiMaru/ComicNeue di `src/assets/`.
-Jangan copy `configs/` (tidak relevan desktop).
-App icon: `src/assets/icons/app-icon.png` (1024 PNG dari `frame.webp`) ->
-`pnpm tauri icon src/assets/icons/app-icon.png` regenerate `src-tauri/icons/`.
+- `src-tauri/resources/source-configs/`
+- `src-tauri/src/data/datasources/config.rs`
+- `src-tauri/src/data/datasources/extension.rs`
+- `src/lib/pages/FilterPage.svelte`
+- `src/lib/api/client.ts`
+
+Saat mengubah source atau extension:
+
+- Pertahankan validasi path dan source ID.
+- ZIP harus dipreview dan di-install secara selective; jangan memasang semua
+  config tanpa persetujuan user.
+- Jangan mengubah URL manifest/ZIP menjadi default otomatis di form.
+- Meta ikon boleh berasal dari manifest atau asset ZIP; path lokal harus
+  diubah menjadi URL yang dapat dibaca WebView.
+- `nhentai` bawaan tidak boleh di-uninstall lewat UI.
+
+## Rust dan generated types
+
+- Rust format dengan `cargo fmt`; jangan melakukan format manual yang luas.
+- Domain memakai `serde` dan `ts-rs` sesuai pola yang ada.
+- Jika tipe Rust yang diekspor berubah, regen `src/lib/domain/types.ts` lewat
+  mekanisme repo; jangan mengedit generated output tanpa alasan kuat.
+- Error harus eksplisit. Jangan memakai broad catch, silent fallback, atau
+  return sukses ketika operasi sebenarnya gagal.
+- Log tidak boleh berisi credential, token, prompt, atau data sensitif.
+
+## Testing dan definition of done
+
+Sebelum melaporkan pekerjaan selesai:
+
+1. Jalankan test paling kecil yang mencakup perubahan.
+2. Jalankan `pnpm check` untuk perubahan frontend.
+3. Jalankan `cargo test --manifest-path src-tauri/Cargo.toml --lib` untuk
+   perubahan backend atau kontrak IPC.
+4. Jalankan `git diff --check`.
+5. Untuk perubahan UI penting, verifikasi pada aplikasi berjalan atau browser
+   dev server, bukan hanya lewat pembacaan kode.
+6. Catat command dan hasil penting di respons serta update `MEMORY.md`.
+
+Jangan mengklaim test hijau jika test gagal karena sandbox, network, atau
+dependency. Laporkan jumlah pass/fail/ignored dan penyebabnya.
+
+## Asset dan perubahan file
+
+- Gunakan asset yang sudah ada di `src/assets/` atau resource yang sesuai.
+- Jangan menyalin folder `configs/` mobile ke bundle desktop; source tambahan
+  dipasang melalui extension system.
+- Jangan mengubah file yang tidak berkaitan.
+- Jangan menjalankan `git reset --hard`, `git checkout --`, atau perintah
+  destruktif lain tanpa persetujuan user.
+- Jangan commit secret, credential, atau file data pribadi.
+- Jangan membuat commit kecuali diminta user.
+
+## Referensi penting
+
+- [`README.md`](README.md) — quick start dan orientasi proyek.
+- [`MEMORY.md`](MEMORY.md) — konteks lintas sesi.
+- [`docs/architecture.md`](docs/architecture.md) — arsitektur lengkap.
+- [`openspec/changes/`](openspec/changes/) — perubahan aktif.
+- [`shirokun20/kuron-mobile`](https://github.com/shirokun20/kuron-mobile) — acuan
+  perilaku, desain, dan parity mobile.
+- [`shirokun20/kuron-extensions`](https://github.com/shirokun20/kuron-extensions) —
+  repo extension komunitas.
