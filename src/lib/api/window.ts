@@ -6,6 +6,15 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 const SPLASH = { w: 480, h: 700 };
 const MAIN = { w: 1200, h: 800 };
 
+/** True only when the page is running inside a Tauri webview. */
+export function isTauriRuntime(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    "__TAURI_INTERNALS__" in window ||
+    "__TAURI__" in window
+  );
+}
+
 async function current(): Promise<Window | null> {
   try {
     return getCurrentWindow();
@@ -45,6 +54,7 @@ async function openPopup(
   title: string,
   width: number,
   height: number,
+  fresh = false,
 ): Promise<string | null> {
   try {
     let existing = null;
@@ -54,12 +64,19 @@ async function openPopup(
       existing = null;
     }
     if (existing) {
-      // Paksa ukuran kini: window lama (dibuat sebelum resize) ikut update.
-      await existing
-        .setSize(new LogicalSize(width, height))
-        .catch(() => {});
-      await existing.setFocus().catch(() => {});
-      return null;
+      if (fresh) {
+        // Filter: selalu buat ulang agar form ikut sumber aktif kini
+        // (fokus saja = konten basi: sumber/form lama).
+        await existing.close().catch(() => {});
+        existing = null;
+      } else {
+        // Paksa ukuran kini: window lama (dibuat sebelum resize) ikut update.
+        await existing
+          .setSize(new LogicalSize(width, height))
+          .catch(() => {});
+        await existing.setFocus().catch(() => {});
+        return null;
+      }
     }
     const win = new WebviewWindow(label, {
       url: `${window.location.origin}/${hash}`,
@@ -111,7 +128,7 @@ export function openExtensionManager(): Promise<string | null> {
   return openPopup("extension-manager", "#extensions", "Ekstensi", 560, 720);
 }
 
-/** Popup window native "Filter Pencarian". Fokuskan bila sudah ada. */
+/** Popup window native "Filter Pencarian". Selalu dibuat ulang (fresh). */
 export function openFilterWindow(): Promise<string | null> {
-  return openPopup("filter", "#filter", "Filter Pencarian", 560, 720);
+  return openPopup("filter", "#filter", "Filter Pencarian", 560, 720, true);
 }

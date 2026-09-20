@@ -462,6 +462,40 @@ mod tests {
     }
 
     #[test]
+    fn search_form_params_keep_config_order() {
+        // Urutan field 1:1 mobile (Dart Map = insertion order); butuh fitur
+        // serde_json/preserve_order (tanpa itu BTreeMap = alfabetis).
+        let bundled = SourceConfigs::load_dir(&SourceConfigs::bundled_dir()).unwrap();
+        let md = bundled.get("mangadex").expect("mangadex bawaan");
+        let params = md
+            .search_form
+            .get("params")
+            .and_then(|p| p.as_object())
+            .expect("mangadex params");
+        let keys: Vec<&str> = params.keys().map(|k| k.as_str()).collect();
+        assert_eq!(
+            keys,
+            vec![
+                "title",
+                "includedTag",
+                "excludedTag",
+                "includedTagsMode",
+                "excludedTagsMode",
+                "status",
+                "publicationDemographic",
+                "contentRating",
+                "year",
+                "createdAtSince",
+                "updatedAtSince",
+                "sort",
+                "hasAvailableChapters",
+                "originalLanguage",
+                "availableTranslatedLanguage",
+            ]
+        );
+    }
+
+    #[test]
     fn fill_url_encodes_and_strips_empty() {
         // Encode query + drop param kosong (ala GenericUrlBuilder).
         let u = fill_url("/s?q={query}&sort={sort}&page={page}", &[("query", "a&b c"), ("sort", ""), ("page", "2")]);

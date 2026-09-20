@@ -5,13 +5,14 @@
   import { contentStore } from "../stores/content.svelte";
   import { helloStore } from "../stores/hello.svelte";
   import { sourceStore } from "../stores/source.svelte";
-  import { openAboutWindow, openExtensionManager, openFilterWindow } from "../api/window";
+  import { isTauriRuntime, openAboutWindow, openExtensionManager, openFilterWindow } from "../api/window";
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import Sidebar from "../components/Sidebar.svelte";
   import ThemeToggle from "../components/ThemeToggle.svelte";
   import MainFeaturedCard from "../components/MainFeaturedCard.svelte";
   import MainGridCard from "../components/MainGridCard.svelte";
+  import FilterPage from "./FilterPage.svelte";
 
   const ICONS = {
     home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>',
@@ -52,11 +53,17 @@
 
   let activeNav = $state("home");
   let collapsed = $state(false);
+  let filterOpen = $state(false);
   let navError = $state<string | null>(null);
   let version = $derived(helloStore.info?.version ?? "0.1.0");
-  // Search = SATU tombol → popup form sumber (mobile: SearchScreen).
+  // Search = SATU tombol → bottom sheet form sumber (mobile: SearchScreen).
   async function openFilter() {
-    navError = await openFilterWindow();
+    navError = null;
+    if (isTauriRuntime()) {
+      navError = await openFilterWindow();
+      return;
+    }
+    filterOpen = true;
   }
 
   // "Tentang"/"Ekstensi" buka popup window native (bukan ganti konten main).
@@ -178,6 +185,20 @@
     </main>
   </div>
 </div>
+
+{#if filterOpen}
+  <div class="filter-sheet-wrap">
+    <button
+      type="button"
+      class="filter-sheet-backdrop"
+      onclick={() => (filterOpen = false)}
+      aria-label="Tutup filter"
+    ></button>
+    <section class="filter-sheet" aria-label="Filter pencarian">
+      <FilterPage onClose={() => { filterOpen = false; }} />
+    </section>
+  </div>
+{/if}
 
 <style>
   .shell {
@@ -317,5 +338,33 @@
   }
   .err {
     color: var(--destructive);
+  }
+
+  .filter-sheet-wrap {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .filter-sheet-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.55);
+    cursor: default;
+  }
+  .filter-sheet {
+    position: relative;
+    width: min(760px, 100%);
+    max-height: min(92vh, 820px);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: 18px 18px 0 0;
+    background: var(--background);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.28);
   }
 </style>

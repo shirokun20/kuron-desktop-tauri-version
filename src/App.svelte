@@ -39,7 +39,16 @@
 {:else if isExt}
   <ExtensionManagerPage />
 {:else if isFilter}
-  <FilterPage />
+  <svelte:boundary>
+    <FilterPage />
+    {#snippet failed(error)}
+      <main class="boot-err">
+        <h1>Gagal buka Filter</h1>
+        <p>{error instanceof Error ? error.message : String(error)}</p>
+        <p class="hint">Screenshot teks ini lalu kirim — biar akar masalah ketemu.</p>
+      </main>
+    {/snippet}
+  </svelte:boundary>
 {:else if routeStore.current === "splash"}
   <SplashScreen />
 {:else}

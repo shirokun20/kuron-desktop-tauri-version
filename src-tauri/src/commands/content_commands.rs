@@ -87,14 +87,21 @@ pub async fn cmd_search_form(
             };
             match state.http.get(&url, &id).await {
                 Ok(body) => {
-                    entry["options"] = resolve_form_options(
-                        &body,
-                        &def,
-                    )
-                    .unwrap_or_default();
+                    match resolve_form_options(&body, &def) {
+                        Some(opts) => {
+                            entry["options"] = opts;
+                        }
+                        None => {
+                            entry["options"] = serde_json::Value::Array(vec![]);
+                            entry["error"] = serde_json::Value::String(
+                                "gagal parse respons endpoint".to_string(),
+                            );
+                        }
+                    }
                 }
-                Err(_) => {
+                Err(e) => {
                     entry["options"] = serde_json::Value::Array(vec![]);
+                    entry["error"] = serde_json::Value::String(e.to_string());
                 }
             }
         }
@@ -388,5 +395,32 @@ mod tests {
             "raw:f_search=G"
         );
         assert_eq!(build_tag_query(None, "tag", "x", "y").unwrap(), "x");
+    }
+
+    #[test]
+    #[ignore = "hits live api.mangadex.org; jalankan manual: cargo test live_mangadex_mangatags -- --ignored"]
+    fn live_mangadex_mangatags_resolves_77() {
+        // Replika jalur `cmd_search_form` untuk dataSource `mangaTags`
+        // (URL + fetch + `resolve_form_options`), tanpa State Tauri.
+        use crate::data::datasources::config::SourceConfigs;
+        let overlay = SourceConfigs::load_overlay(
+            &SourceConfigs::bundled_dir(),
+            &std::path::PathBuf::from("/tmp/kuron-test-noext"),
+        )
+        .unwrap();
+        let file = overlay.get("mangadex").expect("mangadex bundel");
+        let def = file.search_form["dataSources"]["mangaTags"].clone();
+        let ep = def.get("endpoint").and_then(|e| e.as_str()).unwrap();
+        let url = format!("{}{}", file.base_url, ep);
+        assert_eq!(url, "https://api.mangadex.org/manga/tag");
+        // Sama seperti AppState produksi: `HttpClientManager::new()` (proxy on).
+        let http = crate::network::HttpClientManager::new().unwrap();
+        let body = tauri::async_runtime::block_on(http.get(&url, "mangadex")).unwrap();
+        let opts = resolve_form_options(&body, &def).expect("parse 77 tag");
+        let arr = opts.as_array().unwrap();
+        assert_eq!(arr.len(), 77, "opsi mangaTags");
+        assert!(arr[0].get("value").and_then(|v| v.as_str()).unwrap().len() > 10);
+        assert!(arr[0].get("label").and_then(|v| v.as_str()).is_some());
+        assert!(arr[0].get("group").and_then(|v| v.as_str()).is_some());
     }
 }

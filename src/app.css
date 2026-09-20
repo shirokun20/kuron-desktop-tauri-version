@@ -79,6 +79,9 @@
   --accent-foreground: #ffffff;
   --destructive: #c86858;
   --destructive-foreground: #ffffff;
+  --success: #5a8a4c;
+  --warning: #b07a3a;
+  --info: #4a8ac8;
   --border: var(--kuron-border);
   --input: var(--kuron-border);
   --ring: var(--kuron-primary);
