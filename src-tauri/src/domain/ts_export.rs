@@ -9,9 +9,8 @@ use crate::{
     core::InstalledSource,
     data::datasources::extension::{ExtensionManifest, ManifestEntry, ManifestMeta},
     domain::{
-        BubbleBox, Chapter, Content, DownloadState, DownloadTask, GlossaryEntry, Hello,
-        Language, PageImageResult, PageTranslation, ReaderSettings, ReadingMode,
-        SearchFilter, SourceId,
+        BubbleBox, Chapter, Content, DownloadState, DownloadTask, GlossaryEntry, Hello, Language,
+        PageImageResult, PageTranslation, ReaderSettings, ReadingMode, SearchFilter, SourceId,
     },
 };
 
@@ -49,8 +48,7 @@ fn export_types_ts() {
         out.push_str("\n\n");
     }
 
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../src/lib/domain/types.ts");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/lib/domain/types.ts");
     std::fs::write(&path, &out).unwrap();
 
     assert!(out.contains("type Content ="));

@@ -14,7 +14,58 @@ use crate::{
 };
 
 fn sha256_hex(data: &[u8]) -> String {
-    Sha256::digest(data).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(data)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+fn is_safe_component(value: &str) -> bool {
+    !value.is_empty()
+        && value != "."
+        && value != ".."
+        && !value
+            .chars()
+            .any(|c| c == '/' || c == '\\' || c.is_control())
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let a = chunk[0] as usize;
+        let b = chunk.get(1).copied().unwrap_or(0) as usize;
+        let c = chunk.get(2).copied().unwrap_or(0) as usize;
+        out.push(TABLE[a >> 2] as char);
+        out.push(TABLE[((a & 3) << 4) | (b >> 4)] as char);
+        out.push(if chunk.len() > 1 {
+            TABLE[((b & 15) << 2) | (c >> 6)] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[c & 63] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ZipSourceCandidate {
+    pub id: String,
+    pub version: String,
+    pub display_name: Option<String>,
+    pub icon_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ZipPreview {
+    pub token: String,
+    pub sources: Vec<ZipSourceCandidate>,
 }
 
 /// Manifest resmi. Bisa diganti URL manifest lain (repo komunitas).
@@ -61,10 +112,7 @@ pub struct ExtensionManifest {
 }
 
 impl ExtensionManifest {
-    pub fn fetch(
-        http: &HttpClientManager,
-        manifest_url: &str,
-    ) -> Result<Self, AppError> {
+    pub fn fetch(http: &HttpClientManager, manifest_url: &str) -> Result<Self, AppError> {
         let body = tauri::async_runtime::block_on(http.get(manifest_url, "manifest"))?;
         serde_json::from_str(&body)
             .map_err(|e| AppError::Network(format!("manifest {manifest_url}: {e}")))
@@ -76,7 +124,11 @@ impl ExtensionManifest {
             return entry_url.to_string();
         }
         match manifest_url.rfind('/') {
-            Some(i) => format!("{}/{}", &manifest_url[..i], entry_url.trim_start_matches('/')),
+            Some(i) => format!(
+                "{}/{}",
+                &manifest_url[..i],
+                entry_url.trim_start_matches('/')
+            ),
             None => entry_url.to_string(),
         }
     }
@@ -106,8 +158,11 @@ impl<'a> ExtensionManager<'a> {
         manifest_url: &str,
         entry: &ManifestEntry,
     ) -> Result<SourceFile, AppError> {
-        if entry.id.is_empty() || entry.id.contains(|c| c == '/' || c == '.' || c == '\\') {
-            return Err(AppError::Validation(format!("id ekstensi buruk: {}", entry.id)));
+        if !is_safe_component(&entry.id) {
+            return Err(AppError::Validation(format!(
+                "id ekstensi buruk: {}",
+                entry.id
+            )));
         }
         let url = ExtensionManifest::resolve_url(manifest_url, &entry.url);
         let body = tauri::async_runtime::block_on(self.http.get(&url, &entry.id))?;
@@ -123,9 +178,8 @@ impl<'a> ExtensionManager<'a> {
                 )));
             }
         }
-        let cfg: SourceFile = serde_json::from_str(&body).map_err(|e| {
-            AppError::Validation(format!("config {} tidak valid: {e}", entry.id))
-        })?;
+        let cfg: SourceFile = serde_json::from_str(&body)
+            .map_err(|e| AppError::Validation(format!("config {} tidak valid: {e}", entry.id)))?;
         std::fs::write(self.path_for(&entry.id), &body)?;
         // Simpan meta ikon (absolute) untuk tile UI; tak ada → None.
         let icon_url = entry
@@ -153,42 +207,97 @@ impl<'a> ExtensionManager<'a> {
 
     /// Install dari URL zip (struktur `kuron-extensions`: berisi `*-config.json`).
     pub fn install_zip_url(&self, url: &str) -> Result<Vec<String>, AppError> {
-        let bytes = tauri::async_runtime::block_on(
-            self.http.get_bytes(url, "extensions", None),
-        )?;
+        let bytes = tauri::async_runtime::block_on(self.http.get_bytes(url, "extensions", None))?;
         self.install_zip_bytes(&bytes)
+    }
+
+    pub fn preview_zip_bytes(&self, bytes: &[u8]) -> Result<ZipPreview, AppError> {
+        let token = sha256_hex(bytes);
+        let candidates = self.inspect_zip(bytes)?;
+        std::fs::write(self.dir.join(format!(".zip-preview-{token}")), bytes)?;
+        Ok(ZipPreview {
+            token,
+            sources: candidates,
+        })
+    }
+
+    pub fn install_staged_zip(
+        &self,
+        token: &str,
+        selected: &[String],
+    ) -> Result<Vec<String>, AppError> {
+        if !is_safe_component(token) || token.len() != 64 {
+            return Err(AppError::Validation("token zip buruk".to_string()));
+        }
+        if selected.is_empty() {
+            return Err(AppError::Validation(
+                "pilih minimal satu sumber".to_string(),
+            ));
+        }
+        let path = self.dir.join(format!(".zip-preview-{token}"));
+        let bytes = std::fs::read(&path)?;
+        let result = self.install_zip_bytes_selected(&bytes, selected)?;
+        let _ = std::fs::remove_file(path);
+        Ok(result)
     }
 
     /// Install dari bytes zip: tiap `*-config.json` divalidasi parse lalu disimpan
     /// sebagai `{source}-config.json`. Nama path diabaikan (anti zip-slip).
     /// Entri bukan JSON config dilewati.
     pub fn install_zip_bytes(&self, bytes: &[u8]) -> Result<Vec<String>, AppError> {
+        let ids = self
+            .inspect_zip(bytes)?
+            .into_iter()
+            .map(|s| s.id)
+            .collect::<Vec<_>>();
+        self.install_zip_bytes_selected(bytes, &ids)
+    }
+
+    fn install_zip_bytes_selected(
+        &self,
+        bytes: &[u8],
+        selected: &[String],
+    ) -> Result<Vec<String>, AppError> {
+        let configs = self.inspect_zip_with_icons(bytes)?;
+        let selected: std::collections::HashSet<&str> =
+            selected.iter().map(String::as_str).collect();
         let cursor = std::io::Cursor::new(bytes);
-        let mut archive =
-            zip::ZipArchive::new(cursor).map_err(|e| AppError::Validation(format!("zip rusak: {e}")))?;
+        let mut archive = zip::ZipArchive::new(cursor)
+            .map_err(|e| AppError::Validation(format!("zip rusak: {e}")))?;
         let mut staged: Vec<(String, String)> = Vec::new();
         for i in 0..archive.len() {
-            let mut file = archive.by_index(i).map_err(|e| {
-                AppError::Validation(format!("zip entry: {e}"))
-            })?;
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| AppError::Validation(format!("zip entry: {e}")))?;
             let name = file.name().to_string();
             if !name.ends_with("-config.json") {
                 continue;
             }
             let mut raw = String::new();
             use std::io::Read;
-            file.read_to_string(&mut raw).map_err(|e| {
-                AppError::Validation(format!("zip baca {name}: {e}"))
-            })?;
-            let cfg: SourceFile = serde_json::from_str(&raw).map_err(|e| {
-                AppError::Validation(format!("config {name} tidak valid: {e}"))
-            })?;
-            if cfg.source.is_empty()
-                || cfg.source.contains(|c| c == '/' || c == '.' || c == '\\')
-            {
+            file.read_to_string(&mut raw)
+                .map_err(|e| AppError::Validation(format!("zip baca {name}: {e}")))?;
+            let cfg: SourceFile = serde_json::from_str(&raw)
+                .map_err(|e| AppError::Validation(format!("config {name} tidak valid: {e}")))?;
+            if !is_safe_component(&cfg.source) {
                 return Err(AppError::Validation(format!("source buruk di {name}")));
             }
-            staged.push((cfg.source, raw));
+            if !selected.contains(cfg.source.as_str()) {
+                continue;
+            }
+            let source = cfg.source.clone();
+            let icon_url = configs
+                .iter()
+                .find(|candidate| candidate.0.id == source)
+                .and_then(|candidate| candidate.1.clone());
+            staged.push((source.clone(), raw));
+            if let Some(icon_url) = icon_url {
+                let meta_path = self.dir.join(format!("{source}-meta.json"));
+                std::fs::write(
+                    meta_path,
+                    serde_json::json!({ "icon_url": icon_url }).to_string(),
+                )?;
+            }
         }
         let mut installed = Vec::new();
         for (source, raw) in staged {
@@ -197,6 +306,72 @@ impl<'a> ExtensionManager<'a> {
         }
         installed.sort();
         Ok(installed)
+    }
+
+    fn inspect_zip(&self, bytes: &[u8]) -> Result<Vec<ZipSourceCandidate>, AppError> {
+        Ok(self
+            .inspect_zip_with_icons(bytes)?
+            .into_iter()
+            .map(|(candidate, _)| candidate)
+            .collect())
+    }
+
+    fn inspect_zip_with_icons(
+        &self,
+        bytes: &[u8],
+    ) -> Result<Vec<(ZipSourceCandidate, Option<String>)>, AppError> {
+        let cursor = std::io::Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(cursor)
+            .map_err(|e| AppError::Validation(format!("zip rusak: {e}")))?;
+        let mut out = Vec::new();
+        for i in 0..archive.len() {
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| AppError::Validation(format!("zip entry: {e}")))?;
+            let name = file.name().to_string();
+            if !name.ends_with("-config.json") {
+                continue;
+            }
+            let mut raw = String::new();
+            use std::io::Read;
+            file.read_to_string(&mut raw)
+                .map_err(|e| AppError::Validation(format!("zip baca {name}: {e}")))?;
+            drop(file);
+            let cfg: SourceFile = serde_json::from_str(&raw)
+                .map_err(|e| AppError::Validation(format!("config {name} tidak valid: {e}")))?;
+            if !is_safe_component(&cfg.source) {
+                return Err(AppError::Validation(format!("source buruk di {name}")));
+            }
+            let icon = cfg.ui_icon_path().and_then(|path| {
+                if path.starts_with("http://") || path.starts_with("https://") {
+                    return Some(path);
+                }
+                let icon_name = path.trim_start_matches("./");
+                let mut icon_file = archive.by_name(icon_name).ok()?;
+                let mut data = Vec::new();
+                icon_file.read_to_end(&mut data).ok()?;
+                let mime = if icon_name.ends_with(".svg") {
+                    "image/svg+xml"
+                } else if icon_name.ends_with(".jpg") || icon_name.ends_with(".jpeg") {
+                    "image/jpeg"
+                } else {
+                    "image/png"
+                };
+                Some(format!("data:{mime};base64,{}", base64_encode(&data)))
+            });
+            let source = cfg.source.clone();
+            let version = cfg.version.clone();
+            out.push((
+                ZipSourceCandidate {
+                    id: source,
+                    version,
+                    display_name: cfg.ui_display_name(),
+                    icon_url: icon.clone(),
+                },
+                icon,
+            ));
+        }
+        Ok(out)
     }
 
     pub fn installed_ids(&self) -> Vec<String> {
@@ -258,7 +433,11 @@ mod tests {
                 let mut buf = [0u8; 2048];
                 let len = stream.read(&mut buf).unwrap_or(0);
                 let req = String::from_utf8_lossy(&buf[..len]).to_string();
-                let path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/");
+                let path = req
+                    .lines()
+                    .next()
+                    .and_then(|l| l.split_whitespace().nth(1))
+                    .unwrap_or("/");
                 let checksum = sha256_hex(CONFIG_JSON.as_bytes());
                 let body = if path.ends_with("manifest.json") {
                     MANIFEST_JSON.replace("__CHECKSUM__", &checksum)
@@ -267,7 +446,8 @@ mod tests {
                 };
                 let res = format!(
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(), body
+                    body.len(),
+                    body
                 );
                 stream.write_all(res.as_bytes()).unwrap();
             }
@@ -356,6 +536,67 @@ mod tests {
     }
 
     #[test]
+    fn install_zip_accepts_domain_style_source_ids() {
+        let dir = tmpdir("ext-zip-domain");
+        let http = HttpClientManager::without_proxy().unwrap();
+        let mgr = ExtensionManager::new(&http, &dir).unwrap();
+        let mut zip = std::io::Cursor::new(Vec::new());
+        {
+            let mut w = zip::ZipWriter::new(&mut zip);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            w.start_file("config/manga18.club-config.json", opts)
+                .unwrap();
+            w.write_all(
+                br#"{"source":"manga18.club","version":"1.0.0","baseUrl":"https://manga18.club"}"#,
+            )
+            .unwrap();
+            w.finish().unwrap();
+        }
+        let ids = mgr.install_zip_bytes(zip.get_ref()).unwrap();
+        assert_eq!(ids, vec!["manga18.club".to_string()]);
+        assert!(mgr.load_installed().unwrap().get("manga18.club").is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn zip_preview_selects_sources_and_resolves_local_icons() {
+        let dir = tmpdir("ext-zip-preview");
+        let http = HttpClientManager::without_proxy().unwrap();
+        let mgr = ExtensionManager::new(&http, &dir).unwrap();
+        let mut zip = std::io::Cursor::new(Vec::new());
+        {
+            let mut w = zip::ZipWriter::new(&mut zip);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            use std::io::Write;
+            w.start_file("images/a.png", opts).unwrap();
+            w.write_all(&[137, 80, 78, 71]).unwrap();
+            w.start_file("a-config.json", opts).unwrap();
+            w.write_all(
+                br#"{"source":"a","version":"1","ui":{"displayName":"A","iconPath":"./images/a.png"}}"#,
+            )
+            .unwrap();
+            w.start_file("b-config.json", opts).unwrap();
+            w.write_all(br#"{"source":"b","version":"1"}"#).unwrap();
+            w.finish().unwrap();
+        }
+        let preview = mgr.preview_zip_bytes(zip.get_ref()).unwrap();
+        assert_eq!(preview.sources.len(), 2);
+        assert!(preview.sources[0]
+            .icon_url
+            .as_deref()
+            .is_some_and(|icon| icon.starts_with("data:image/png;base64,")));
+        let installed = mgr
+            .install_staged_zip(&preview.token, &["a".to_string()])
+            .unwrap();
+        assert_eq!(installed, vec!["a".to_string()]);
+        assert!(mgr.load_installed().unwrap().get("a").is_some());
+        assert!(mgr.load_installed().unwrap().get("b").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     #[ignore = "hits live kuron-extensions; jalankan manual: cargo test live_manifest_install -- --ignored"]
     fn live_manifest_install_roundtrip() {
         let http = HttpClientManager::new().unwrap();
@@ -390,7 +631,9 @@ mod tests {
             meta: None,
             checksum: String::new(),
         };
-        assert!(mgr.install("http://localhost/manifest.json", &evil).is_err());
+        assert!(mgr
+            .install("http://localhost/manifest.json", &evil)
+            .is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

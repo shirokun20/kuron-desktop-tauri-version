@@ -13,7 +13,10 @@ use std::{
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::{core::AppError, domain::{Chapter, Content}};
+use crate::{
+    core::AppError,
+    domain::{Chapter, Content},
+};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS contents (
@@ -88,16 +91,18 @@ impl SqliteDs {
     }
 
     fn migrate(&self) -> Result<(), AppError> {
-        self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?.execute_batch(SCHEMA)?;
+        self.conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?
+            .execute_batch(SCHEMA)?;
         Ok(())
     }
 
     pub fn save_content(&self, c: &Content) -> Result<(), AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         conn.execute(
             "INSERT INTO contents (id, title, cover_url, source_id, upload_date, is_favorite)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -117,9 +122,10 @@ impl SqliteDs {
     }
 
     pub fn get_content(&self, id: &str) -> Result<Option<Content>, AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         conn.query_row(
             "SELECT id, title, cover_url, source_id, upload_date, is_favorite
              FROM contents WHERE id = ?1",
@@ -142,9 +148,10 @@ impl SqliteDs {
     }
 
     pub fn save_chapters(&self, chapters: &[Chapter]) -> Result<(), AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         for ch in chapters {
             conn.execute(
                 "INSERT INTO chapters (id, content_id, title, ch_order, is_external, external_url)
@@ -165,9 +172,10 @@ impl SqliteDs {
     }
 
     pub fn record_history(&self, content_id: &str, position: i64) -> Result<(), AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         conn.execute(
             "INSERT INTO history (content_id, position, updated_at) VALUES (?1, ?2, ?3)
              ON CONFLICT(content_id) DO UPDATE SET position=excluded.position,
@@ -178,9 +186,10 @@ impl SqliteDs {
     }
 
     pub fn list_history(&self, limit: i64) -> Result<Vec<(String, i64)>, AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         let mut stmt = conn.prepare(
             "SELECT content_id, position FROM history ORDER BY updated_at DESC LIMIT ?1",
         )?;
@@ -191,17 +200,19 @@ impl SqliteDs {
     }
 
     pub fn clear_history(&self) -> Result<(), AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         conn.execute("DELETE FROM history", [])?;
         Ok(())
     }
 
     pub fn set_favorite(&self, content_id: &str, fav: bool) -> Result<(), AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         if fav {
             conn.execute(
                 "INSERT INTO favorites (content_id, added_at) VALUES (?1, ?2)
@@ -209,15 +220,19 @@ impl SqliteDs {
                 params![content_id, now_secs()],
             )?;
         } else {
-            conn.execute("DELETE FROM favorites WHERE content_id = ?1", params![content_id])?;
+            conn.execute(
+                "DELETE FROM favorites WHERE content_id = ?1",
+                params![content_id],
+            )?;
         }
         Ok(())
     }
 
     pub fn list_favorites(&self) -> Result<Vec<String>, AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         let mut stmt = conn.prepare("SELECT content_id FROM favorites ORDER BY added_at DESC")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
@@ -229,9 +244,10 @@ impl SqliteDs {
         content_id: &str,
         state_json: &str,
     ) -> Result<(), AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         conn.execute(
             "INSERT INTO downloads (chapter_id, content_id, state_json) VALUES (?1, ?2, ?3)
              ON CONFLICT(chapter_id) DO UPDATE SET state_json=excluded.state_json",
@@ -241,9 +257,10 @@ impl SqliteDs {
     }
 
     pub fn get_download(&self, chapter_id: &str) -> Result<Option<String>, AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         conn.query_row(
             "SELECT state_json FROM downloads WHERE chapter_id = ?1",
             params![chapter_id],
@@ -254,9 +271,10 @@ impl SqliteDs {
     }
 
     pub fn put_translation(&self, key: &str, data: &[u8]) -> Result<(), AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         conn.execute(
             "INSERT INTO translation_cache (key, data) VALUES (?1, ?2)
              ON CONFLICT(key) DO UPDATE SET data=excluded.data",
@@ -266,9 +284,10 @@ impl SqliteDs {
     }
 
     pub fn get_translation(&self, key: &str) -> Result<Option<Vec<u8>>, AppError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AppError::Storage(format!("sqlite lock: {e}"))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         conn.query_row(
             "SELECT data FROM translation_cache WHERE key = ?1",
             params![key],
@@ -304,9 +323,10 @@ impl KvStoreDs {
     }
 
     pub fn set(&self, key: &str, value: &str) -> Result<(), AppError> {
-        let mut map = self.map.lock().map_err(|e| {
-            AppError::Storage(format!("kv lock: {e}"))
-        })?;
+        let mut map = self
+            .map
+            .lock()
+            .map_err(|e| AppError::Storage(format!("kv lock: {e}")))?;
         map.insert(key.to_string(), value.to_string());
         std::fs::write(&self.path, serde_json::to_string(&*map).unwrap())?;
         Ok(())
@@ -453,11 +473,7 @@ mod tests {
     use crate::domain::SearchFilter;
 
     fn tmpdir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "kuron-test-{}-{}",
-            name,
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("kuron-test-{}-{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

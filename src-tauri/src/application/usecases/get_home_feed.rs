@@ -29,8 +29,8 @@ mod tests {
     fn serves_mock_feed_via_arc_dyn() {
         let repo: std::sync::Arc<dyn HomeFeedRepository> =
             std::sync::Arc::new(MockContentRepository);
-        let feed = tauri::async_runtime::block_on(GetHomeFeedUseCase::new(repo).execute(1))
-            .unwrap();
+        let feed =
+            tauri::async_runtime::block_on(GetHomeFeedUseCase::new(repo).execute(1)).unwrap();
         assert_eq!(feed.len(), 8);
     }
 }

@@ -10,7 +10,8 @@ pub use content_commands::{
     cmd_search_form, cmd_tag_query,
 };
 pub use extension_commands::{
-    cmd_extension_install, cmd_extension_install_zip_file, cmd_extension_install_zip_url, cmd_extension_manifest,
-    cmd_extension_uninstall, cmd_sources_list,
+    cmd_extension_install, cmd_extension_install_staged_zip, cmd_extension_install_zip_file,
+    cmd_extension_manifest, cmd_extension_preview_zip_url, cmd_extension_uninstall,
+    cmd_sources_list,
 };
 pub use hello_commands::{cmd_app_info, cmd_hello_world, AppInfo};

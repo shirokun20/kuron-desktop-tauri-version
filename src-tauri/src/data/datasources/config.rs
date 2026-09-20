@@ -4,7 +4,10 @@
 //! Struct toleran: field tak dikenal diabaikan; `scraper/selectors/searchForm`
 //! penuh ditahan sebagai `serde_json::Value` untuk port lanjutan.
 
-use std::{collections::HashMap, path::{Path, PathBuf}};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use serde::Deserialize;
 
@@ -221,7 +224,11 @@ impl ScraperSection {
                     }
                     break;
                 }
-                UrlPattern::Full { url: u, inherits, list: l } => {
+                UrlPattern::Full {
+                    url: u,
+                    inherits,
+                    list: l,
+                } => {
                     if url.is_none() {
                         url = u.as_deref();
                     }
@@ -264,9 +271,7 @@ impl SourceFile {
             if let Some(obj) = template.get("params").and_then(|p| p.as_object()) {
                 let q: Vec<String> = obj
                     .iter()
-                    .map(|(k, v)| {
-                        format!("{}={}", k, v.as_str().unwrap_or(&v.to_string()))
-                    })
+                    .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or(&v.to_string())))
                     .collect();
                 if !q.is_empty() {
                     url.push('?');
@@ -354,9 +359,7 @@ pub(crate) fn encode_query(v: &str) -> String {
 pub(crate) fn encode_query_key(k: &str) -> String {
     let mut out = String::with_capacity(k.len());
     for b in k.bytes() {
-        if b.is_ascii_alphanumeric()
-            || matches!(b, b'-' | b'_' | b'.' | b'~' | b'[' | b']')
-        {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~' | b'[' | b']') {
             out.push(b as char);
         } else if b == b' ' {
             out.push('+');
@@ -402,9 +405,8 @@ impl SourceConfigs {
 
     pub fn load_dir(dir: &Path) -> Result<Self, AppError> {
         let mut map = HashMap::new();
-        let entries = std::fs::read_dir(dir).map_err(|e| {
-            AppError::Storage(format!("config dir {}: {e}", dir.display()))
-        })?;
+        let entries = std::fs::read_dir(dir)
+            .map_err(|e| AppError::Storage(format!("config dir {}: {e}", dir.display())))?;
         for entry in entries.flatten() {
             let path = entry.path();
             // HANYA `*-config.json` — meta ikon (`*-meta.json`) bukan sumber.
@@ -415,9 +417,8 @@ impl SourceConfigs {
                 continue;
             }
             let raw = std::fs::read_to_string(&path)?;
-            let cfg: SourceFile = serde_json::from_str(&raw).map_err(|e| {
-                AppError::Storage(format!("config {}: {e}", path.display()))
-            })?;
+            let cfg: SourceFile = serde_json::from_str(&raw)
+                .map_err(|e| AppError::Storage(format!("config {}: {e}", path.display())))?;
             let key = if cfg.source.is_empty() {
                 path.file_stem()
                     .and_then(|s| s.to_str())
@@ -451,7 +452,9 @@ impl SourceConfigs {
 
     fn load_dir_opt(dir: &Path) -> Result<Self, AppError> {
         if !dir.exists() {
-            return Ok(Self { map: HashMap::new() });
+            return Ok(Self {
+                map: HashMap::new(),
+            });
         }
         Self::load_dir(dir)
     }
@@ -528,8 +531,7 @@ mod tests {
                 ),
             ],
         );
-        let merged =
-            SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &dir).unwrap();
+        let merged = SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &dir).unwrap();
         assert_eq!(merged.len(), 2);
         assert_eq!(merged.get("nhentai").unwrap().version, "9.9.9");
         assert_eq!(merged.get("mangadex").unwrap().version, "1.1.10");
@@ -578,7 +580,10 @@ mod tests {
     #[test]
     fn fill_url_encodes_and_strips_empty() {
         // Encode query + drop param kosong (ala GenericUrlBuilder).
-        let u = fill_url("/s?q={query}&sort={sort}&page={page}", &[("query", "a&b c"), ("sort", ""), ("page", "2")]);
+        let u = fill_url(
+            "/s?q={query}&sort={sort}&page={page}",
+            &[("query", "a&b c"), ("sort", ""), ("page", "2")],
+        );
         assert_eq!(u, "/s?q=a%26b+c&page=2", "{u}");
         // URL absolut tak diapa-apakan selain substitusi.
         let u = fill_url("https://x.example/{id}", &[("id", "1")]);
@@ -593,11 +598,9 @@ mod tests {
         use serde_json::json;
         let r: RateLimitSection = serde_json::from_value(json!({"minDelayMs": 200})).unwrap();
         assert_eq!(r.resolve_delay_ms(), 200);
-        let r: RateLimitSection =
-            serde_json::from_value(json!({"requestsPerSecond": 2})).unwrap();
+        let r: RateLimitSection = serde_json::from_value(json!({"requestsPerSecond": 2})).unwrap();
         assert_eq!(r.resolve_delay_ms(), 500);
-        let r: RateLimitSection =
-            serde_json::from_value(json!({"requestsPerMinute": 60})).unwrap();
+        let r: RateLimitSection = serde_json::from_value(json!({"requestsPerMinute": 60})).unwrap();
         assert_eq!(r.resolve_delay_ms(), 1000);
         assert_eq!(RateLimitSection::default().resolve_delay_ms(), 0);
     }
@@ -607,8 +610,16 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("kuron-test-meta-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("x-config.json"), r#"{"source": "x", "baseUrl": "https://x.example"}"#).unwrap();
-        std::fs::write(dir.join("x-meta.json"), r#"{"icon_url": "https://x.example/i.png"}"#).unwrap();
+        std::fs::write(
+            dir.join("x-config.json"),
+            r#"{"source": "x", "baseUrl": "https://x.example"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("x-meta.json"),
+            r#"{"icon_url": "https://x.example/i.png"}"#,
+        )
+        .unwrap();
         let cfgs = SourceConfigs::load_dir(&dir).unwrap();
         assert_eq!(cfgs.len(), 1);
         assert!(cfgs.get("x").is_some());
@@ -642,7 +653,10 @@ mod tests {
         assert_eq!(cfgs.len(), 2);
         let nh = cfgs.get("nhentai").unwrap();
         let search = nh
-            .endpoint("search", &[("query", "test"), ("sort", "popular"), ("page", "1")])
+            .endpoint(
+                "search",
+                &[("query", "test"), ("sort", "popular"), ("page", "1")],
+            )
             .unwrap();
         assert!(search.contains("/api/v2/search?query=test"), "{search}");
         assert_eq!(nh.min_delay_ms(), 200);

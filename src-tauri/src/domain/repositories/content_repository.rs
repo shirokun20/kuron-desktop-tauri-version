@@ -20,10 +20,7 @@ pub trait ContentRepository: HomeFeedRepository {
     async fn search(&self, filter: SearchFilter) -> Result<Vec<Content>, AppError>;
     async fn get_detail(&self, content_id: &str) -> Result<Content, AppError>;
     async fn get_chapters(&self, content_id: &str) -> Result<Vec<Chapter>, AppError>;
-    async fn get_page_images(
-        &self,
-        chapter_id: &str,
-    ) -> Result<Vec<PageImageResult>, AppError>;
+    async fn get_page_images(&self, chapter_id: &str) -> Result<Vec<PageImageResult>, AppError>;
 }
 
 /// Blanket impl agar `Arc<dyn ContentRepository>` (isi AppState)
@@ -49,10 +46,7 @@ impl<R: ContentRepository + ?Sized> ContentRepository for Arc<R> {
         (**self).get_chapters(content_id).await
     }
 
-    async fn get_page_images(
-        &self,
-        chapter_id: &str,
-    ) -> Result<Vec<PageImageResult>, AppError> {
+    async fn get_page_images(&self, chapter_id: &str) -> Result<Vec<PageImageResult>, AppError> {
         (**self).get_page_images(chapter_id).await
     }
 }

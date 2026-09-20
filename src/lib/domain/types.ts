@@ -50,4 +50,5 @@ export type ExtensionManifest = { schemaVersion: number, minimumAppVersion: stri
 export type ManifestEntry = { id: string, version: string, url: string, meta: ManifestMeta | null, checksum: string, };
 
 export type ManifestMeta = { displayName: string, description: string, contentType: string, language: string, sizeKb: number, iconUrl: string | null, };
-
+export type ZipSourceCandidate = { id: string, version: string, displayName: string | null, iconUrl: string | null, };
+export type ZipPreview = { token: string, sources: ZipSourceCandidate[], };

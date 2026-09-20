@@ -54,10 +54,7 @@ impl ContentRepository for MockContentRepository {
         Ok(vec![])
     }
 
-    async fn get_page_images(
-        &self,
-        _chapter_id: &str,
-    ) -> Result<Vec<PageImageResult>, AppError> {
+    async fn get_page_images(&self, _chapter_id: &str) -> Result<Vec<PageImageResult>, AppError> {
         Ok(vec![])
     }
 }
@@ -104,10 +101,15 @@ impl ContentRepositoryImpl {
         let page = page.max(1);
         let key = PaginationCursors::home_key(&self.config.source_id, page);
         let next_key = PaginationCursors::home_key(&self.config.source_id, page + 1);
-        self.fetch_scraper_cursored(&key, &next_key, || self.config.home_url_page(page)).await
+        self.fetch_scraper_cursored(&key, &next_key, || self.config.home_url_page(page))
+            .await
     }
 
-    async fn fetch_scraper_search(&self, query: &str, page: u32) -> Result<Vec<ContentModel>, AppError> {
+    async fn fetch_scraper_search(
+        &self,
+        query: &str,
+        page: u32,
+    ) -> Result<Vec<ContentModel>, AppError> {
         let page = page.max(1);
         let key = PaginationCursors::search_key(&self.config.source_id, query, page);
         let next_key = PaginationCursors::search_key(&self.config.source_id, query, page + 1);
@@ -117,7 +119,8 @@ impl ContentRepositoryImpl {
         } else {
             self.config.list_url(query, page)
         };
-        self.fetch_scraper_cursored(&key, &next_key, || template).await
+        self.fetch_scraper_cursored(&key, &next_key, || template)
+            .await
     }
 
     async fn fetch_scraper_cursored(
@@ -131,7 +134,10 @@ impl ContentRepositoryImpl {
             Some(CursorState::Next(u)) => u,
             None => template_url(),
         };
-        let (models, next) = self.scraper.fetch_list_with_next(&url, &self.config).await?;
+        let (models, next) = self
+            .scraper
+            .fetch_list_with_next(&url, &self.config)
+            .await?;
         match next {
             Some(u) => self.cursors.put_next(next_key, u),
             None => self.cursors.mark_exhausted(next_key),
@@ -152,9 +158,9 @@ impl ContentRepositoryImpl {
     }
 
     fn nh(&self) -> Result<&NhentaiApiAdapter, AppError> {
-        self.nhentai.as_ref().ok_or_else(|| {
-            AppError::Internal("nhentai adapter belum dipasang".to_string())
-        })
+        self.nhentai
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("nhentai adapter belum dipasang".to_string()))
     }
 }
 
@@ -218,13 +224,12 @@ impl ContentRepository for ContentRepositoryImpl {
             return Ok(chapters);
         }
         let url = self.config.detail_url(content_id);
-        self.scraper.fetch_chapters(&url, content_id, &self.config).await
+        self.scraper
+            .fetch_chapters(&url, content_id, &self.config)
+            .await
     }
 
-    async fn get_page_images(
-        &self,
-        chapter_id: &str,
-    ) -> Result<Vec<PageImageResult>, AppError> {
+    async fn get_page_images(&self, chapter_id: &str) -> Result<Vec<PageImageResult>, AppError> {
         if self.is_nhentai() {
             let gallery = NhentaiApiAdapter::gallery_of_chapter(chapter_id);
             let urls = self.nh()?.pages(gallery).await?;

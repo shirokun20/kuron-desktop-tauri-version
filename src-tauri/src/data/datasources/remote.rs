@@ -191,9 +191,7 @@ fn row_language(item: scraper::ElementRef<'_>) -> Option<String> {
             if k.trim().eq_ignore_ascii_case("language") {
                 let name = v.trim();
                 if !name.is_empty() {
-                    return Some(
-                        normalize_lang(name).unwrap_or_else(|| name.to_string()),
-                    );
+                    return Some(normalize_lang(name).unwrap_or_else(|| name.to_string()));
                 }
             }
         }
@@ -239,11 +237,7 @@ impl SourceConfig {
     pub fn list_url(&self, query: &str, page: u32) -> String {
         let path = crate::data::datasources::config::fill_url(
             &self.list_path,
-            &[
-                ("query", query),
-                ("q", query),
-                ("page", &page.to_string()),
-            ],
+            &[("query", query), ("q", query), ("page", &page.to_string())],
         );
         if path.starts_with("http://") || path.starts_with("https://") {
             return path;
@@ -295,12 +289,19 @@ impl SourceConfig {
             .map(|t| t.to_lowercase().replace(' ', "-"))
             .unwrap_or_default();
         base = base
-            .replace("{query}", &crate::data::datasources::config::encode_query(&query_val))
-            .replace("{tag}", &crate::data::datasources::config::encode_query(&tag_val));
+            .replace(
+                "{query}",
+                &crate::data::datasources::config::encode_query(&query_val),
+            )
+            .replace(
+                "{tag}",
+                &crate::data::datasources::config::encode_query(&tag_val),
+            );
         base = clear_placeholders(&base);
         // Pasangan default template.
         let mut merged: Vec<(String, String)> = Vec::new();
-        let mut consumed: Vec<String> = vec!["page".to_string(), "paged".to_string(), "p".to_string()];
+        let mut consumed: Vec<String> =
+            vec!["page".to_string(), "paged".to_string(), "p".to_string()];
         for pair in tpl_query.split('&') {
             if pair.is_empty() {
                 continue;
@@ -315,11 +316,17 @@ impl SourceConfig {
                 consumed.push(k.to_string());
                 consumed.push("query".to_string());
                 consumed.push("q".to_string());
-                v.replace("{query}", &crate::data::datasources::config::encode_query(&query_val))
+                v.replace(
+                    "{query}",
+                    &crate::data::datasources::config::encode_query(&query_val),
+                )
             } else if v.contains("{tag}") {
                 consumed.push(k.to_string());
                 consumed.push("tag".to_string());
-                v.replace("{tag}", &crate::data::datasources::config::encode_query(&tag_val))
+                v.replace(
+                    "{tag}",
+                    &crate::data::datasources::config::encode_query(&tag_val),
+                )
             } else {
                 v.to_string()
             };
@@ -346,7 +353,11 @@ impl SourceConfig {
         } else {
             format!(
                 "{base}?{}",
-                merged.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&")
+                merged
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect::<Vec<_>>()
+                    .join("&")
             )
         };
         if url.starts_with("http://") || url.starts_with("https://") {
@@ -368,7 +379,8 @@ impl SourceConfig {
         "query"
     }
 
-    pub fn detail_url(&self, id_or_url: &str) -> String {        if id_or_url.starts_with("http://") || id_or_url.starts_with("https://") {
+    pub fn detail_url(&self, id_or_url: &str) -> String {
+        if id_or_url.starts_with("http://") || id_or_url.starts_with("https://") {
             return id_or_url.to_string();
         }
         let path = crate::data::datasources::config::fill_url(
@@ -433,7 +445,10 @@ fn hex_val(c: u8) -> Option<u8> {
 /// Nilai non-kosong pertama dari daftar kunci (berurutan).
 fn raw_first(pairs: &[(String, String)], keys: &[&str]) -> Option<String> {
     for k in keys {
-        if let Some((_, v)) = pairs.iter().find(|(ek, ev)| ek == *k && !ev.trim().is_empty()) {
+        if let Some((_, v)) = pairs
+            .iter()
+            .find(|(ek, ev)| ek == *k && !ev.trim().is_empty())
+        {
             return Some(v.clone());
         }
     }
@@ -442,7 +457,9 @@ fn raw_first(pairs: &[(String, String)], keys: &[&str]) -> Option<String> {
 
 /// Nilai query teks: kunci template dulu, lalu kandidat umum.
 fn raw_query_value(pairs: &[(String, String)], hint: &str) -> String {
-    let mut keys = vec![hint, "query", "q", "s", "keyword", "search", "title", "f_search"];
+    let mut keys = vec![
+        hint, "query", "q", "s", "keyword", "search", "title", "f_search",
+    ];
     keys.dedup();
     raw_first(pairs, &keys).unwrap_or_default()
 }
@@ -462,8 +479,11 @@ fn clear_placeholders(s: &str) -> String {
 
 /// Kunci query mentah ada (pencocokan nama persis sebelum `=`, URL-decoded).
 fn has_query_key(url: &str, key: &str) -> bool {
-    let Some(q) = url.split_once('?').map(|(_, q)| q) else { return false };
-    q.split('&').any(|pair| pair.split_once('=').map(|(k, _)| k).unwrap_or(pair) == key)
+    let Some(q) = url.split_once('?').map(|(_, q)| q) else {
+        return false;
+    };
+    q.split('&')
+        .any(|pair| pair.split_once('=').map(|(k, _)| k).unwrap_or(pair) == key)
 }
 
 /// Ganti total param multi-nilai (mobile `_replaceMultiValueParam`):
@@ -486,7 +506,11 @@ fn replace_multi_param(url: &str, key: &str, values: &[String]) -> String {
     for v in values {
         kept.push(format!("{key}={}", encode_query(v)));
     }
-    if kept.is_empty() { base } else { format!("{base}?{}", kept.join("&")) }
+    if kept.is_empty() {
+        base
+    } else {
+        format!("{base}?{}", kept.join("&"))
+    }
 }
 fn absolutize_url(base: &str, src: &str) -> String {
     if src.is_empty() {
@@ -557,7 +581,12 @@ fn extract_next_url(html: &str, base_url: &str, selector: &str) -> Option<String
     for sel_str in selectors {
         if let Ok(sel) = Selector::parse(sel_str) {
             if let Some(el) = doc.select(&sel).next() {
-                let href = el.value().attr("href").unwrap_or("").trim().replace("&amp;", "&");
+                let href = el
+                    .value()
+                    .attr("href")
+                    .unwrap_or("")
+                    .trim()
+                    .replace("&amp;", "&");
                 if !href.is_empty() {
                     return Some(absolutize_url(base_url, &href));
                 }
@@ -764,8 +793,7 @@ pub fn source_config_from_json(
         Some(UrlPattern::Full { url: Some(u), .. }) => u.clone(),
         _ => String::new(),
     };
-    let (chapter_selector, chapter_link, chapter_title) =
-        chapters_from(&scraper.selectors);
+    let (chapter_selector, chapter_link, chapter_title) = chapters_from(&scraper.selectors);
     let (page_selector, page_attr) = reader_from(&scraper.selectors);
     // Judul/cover halaman detail (fallback ke list bila tak ada).
     let detail_fields: HashMap<String, crate::data::datasources::config::FieldSel> = scraper
@@ -845,11 +873,7 @@ pub fn source_config_from_json(
         detail_language
     };
     // Cursor token mobile (`list.pagination.next`, mis. `#unext`).
-    let pagination_next = list
-        .pagination
-        .get("next")
-        .cloned()
-        .unwrap_or_default();
+    let pagination_next = list.pagination.get("next").cloned().unwrap_or_default();
     Some(SourceConfig {
         source_id: source_id.to_string(),
         base_url: base_url.to_string(),
@@ -979,7 +1003,8 @@ const MANGADEX_PAGE_SIZE: u32 = 100;
 const MANGADEX_MAX_OFFSET: u32 = 9900;
 const MANGADEX_ALL: &str = "/manga?limit=100&offset={offset}&includes[]=cover_art&includes[]=author&includes[]=artist&contentRating[]=erotica&contentRating[]=pornographic&contentRating[]=suggestive&contentRating[]=safe&hasAvailableChapters=true&order[latestUploadedChapter]=desc";
 const MANGADEX_SEARCH: &str = "/manga?title={query}&limit=100&offset={offset}&includes[]=cover_art&includes[]=author&includes[]=artist&contentRating[]=erotica&contentRating[]=pornographic&contentRating[]=suggestive&contentRating[]=safe&hasAvailableChapters=true";
-const MANGADEX_DETAIL: &str = "/manga/{id}?includes[]=cover_art&includes[]=author&includes[]=artist";
+const MANGADEX_DETAIL: &str =
+    "/manga/{id}?includes[]=cover_art&includes[]=author&includes[]=artist";
 const MANGADEX_CHAPTERS: &str = "/chapter?manga={id}&translatedLanguage[]={language}&limit=100&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic";
 const MANGADEX_AT_HOME: &str = "/at-home/server/{chapterId}";
 
@@ -990,7 +1015,10 @@ fn detail_language_tag(doc: &Html) -> Option<String> {
     };
     for el in doc.select(&sel) {
         let id = el.value().attr("id").unwrap_or("");
-        let name = id.split_once(':').map(|(_, v)| v.trim()).filter(|v| !v.is_empty())
+        let name = id
+            .split_once(':')
+            .map(|(_, v)| v.trim())
+            .filter(|v| !v.is_empty())
             .map(str::to_string)
             .or_else(|| {
                 let t = collapse_ws(&el.text().collect::<String>());
@@ -1014,7 +1042,10 @@ pub struct GenericRestAdapter {
 
 impl GenericRestAdapter {
     pub fn new(http: HttpClientManager) -> Self {
-        Self { http, source_file: None }
+        Self {
+            http,
+            source_file: None,
+        }
     }
 
     pub fn with_source_file(mut self, file: SourceFile) -> Self {
@@ -1033,7 +1064,11 @@ impl GenericRestAdapter {
     /// Endpoint `api.endpoints[name]` dari JSON, fallback template bawaan
     /// (salinan nilai `mangadex-config.json` mobile).
     fn md_endpoint(&self, name: &str, params: &[(&str, &str)], fallback: &str) -> String {
-        if let Some(url) = self.source_file.as_ref().and_then(|f| f.endpoint(name, params)) {
+        if let Some(url) = self
+            .source_file
+            .as_ref()
+            .and_then(|f| f.endpoint(name, params))
+        {
             return url;
         }
         let path = fill_url(fallback, params);
@@ -1048,13 +1083,18 @@ impl GenericRestAdapter {
         page: u32,
     ) -> Result<Vec<ContentModel>, AppError> {
         let page = page.max(1);
-        let offset = ((page.saturating_sub(1) * MANGADEX_PAGE_SIZE).min(MANGADEX_MAX_OFFSET)).to_string();
+        let offset =
+            ((page.saturating_sub(1) * MANGADEX_PAGE_SIZE).min(MANGADEX_MAX_OFFSET)).to_string();
         let url = if query.trim().is_empty() {
             self.md_endpoint("allGalleries", &[("offset", &offset)], MANGADEX_ALL)
         } else if let Some(raw) = query.strip_prefix("raw:") {
             self.md_endpoint_raw("search", raw, &offset, MANGADEX_SEARCH)
         } else {
-            self.md_endpoint("search", &[("query", query), ("offset", &offset)], MANGADEX_SEARCH)
+            self.md_endpoint(
+                "search",
+                &[("query", query), ("offset", &offset)],
+                MANGADEX_SEARCH,
+            )
         };
         let body = self.http.get(&url, "mangadex").await?;
         Self::parse_mangadex(&body)
@@ -1069,7 +1109,12 @@ impl GenericRestAdapter {
             .source_file
             .as_ref()
             .and_then(|f| {
-                f.api.as_ref()?.endpoints.get(name)?.as_str().map(str::to_string)
+                f.api
+                    .as_ref()?
+                    .endpoints
+                    .get(name)?
+                    .as_str()
+                    .map(str::to_string)
             })
             .unwrap_or_else(|| fallback.to_string());
         let (base, tpl_query) = match template.split_once('?') {
@@ -1152,7 +1197,11 @@ impl GenericRestAdapter {
         } else {
             format!(
                 "{base}?{}",
-                merged.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&")
+                merged
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect::<Vec<_>>()
+                    .join("&")
             )
         };
         if !raw_fragments.is_empty() {
@@ -1168,16 +1217,20 @@ impl GenericRestAdapter {
 
     /// Aturan `api.queryRules[scope]` dari JSON (mobile `_applyQueryRules`).
     fn md_query_rules(&self, scope: &str) -> Option<serde_json::Value> {
-        self.source_file.as_ref().and_then(|f| {
-            f.api.as_ref()?.query_rules.get(scope).cloned()
-        })
+        self.source_file
+            .as_ref()
+            .and_then(|f| f.api.as_ref()?.query_rules.get(scope).cloned())
     }
 
     /// `ensureParams` (tambah bila hilang), `enforceMultiValueParams`
     /// (ganti total), `ensureMultiValueParamsIfMissing` (tambah bila hilang).
     fn apply_query_rules(url: &str, rules: Option<serde_json::Value>) -> String {
-        let Some(rules) = rules else { return url.to_string() };
-        let Some(obj) = rules.as_object() else { return url.to_string() };
+        let Some(rules) = rules else {
+            return url.to_string();
+        };
+        let Some(obj) = rules.as_object() else {
+            return url.to_string();
+        };
         let str_list = |v: &serde_json::Value| -> Vec<String> {
             v.as_array()
                 .map(|a| {
@@ -1189,7 +1242,10 @@ impl GenericRestAdapter {
                 .unwrap_or_default()
         };
         let mut out = url.to_string();
-        if let Some(enforce) = obj.get("enforceMultiValueParams").and_then(|v| v.as_object()) {
+        if let Some(enforce) = obj
+            .get("enforceMultiValueParams")
+            .and_then(|v| v.as_object())
+        {
             for (key, vals) in enforce {
                 let values = str_list(vals);
                 if values.is_empty() {
@@ -1208,7 +1264,10 @@ impl GenericRestAdapter {
                 out = format!("{out}{sep}{key}={}", encode_query(&s));
             }
         }
-        if let Some(ensure_multi) = obj.get("ensureMultiValueParamsIfMissing").and_then(|v| v.as_object()) {
+        if let Some(ensure_multi) = obj
+            .get("ensureMultiValueParamsIfMissing")
+            .and_then(|v| v.as_object())
+        {
             for (key, vals) in ensure_multi {
                 let values = str_list(vals);
                 if values.is_empty() || has_query_key(&out, key) {
@@ -1230,15 +1289,12 @@ impl GenericRestAdapter {
         let v: serde_json::Value = serde_json::from_str(&body)
             .map_err(|e| AppError::Network(format!("mangadex json: {e}")))?;
         let empty = vec![];
-        let data = v
-            .get("data")
-            .map(|d| vec![d.clone()])
-            .unwrap_or(empty);
+        let data = v.get("data").map(|d| vec![d.clone()]).unwrap_or(empty);
         let json = serde_json::json!({ "data": data });
         let mut items = Self::parse_mangadex(&json.to_string())?;
-        items.pop().ok_or_else(|| {
-            AppError::Validation(format!("mangadex: {id} tidak ditemukan"))
-        })
+        items
+            .pop()
+            .ok_or_else(|| AppError::Validation(format!("mangadex: {id} tidak ditemukan")))
     }
 
     /// Chapter feed (`api.detail.chapters`, mobile `fetchChapters`):
@@ -1254,7 +1310,10 @@ impl GenericRestAdapter {
             .map(str::to_string)
             .unwrap_or_else(|| MANGADEX_CHAPTERS.to_string());
         for lang in [Some("en"), None] {
-            let filled = fill_url(&template, &[("id", manga_id), ("language", lang.unwrap_or(""))]);
+            let filled = fill_url(
+                &template,
+                &[("id", manga_id), ("language", lang.unwrap_or(""))],
+            );
             // `{language}` kosong tak ter-strip otomatis (nama param beda) →
             // buang manual, HANYA saat tanpa filter bahasa.
             let cleaned = if lang.is_none() {
@@ -1285,13 +1344,20 @@ impl GenericRestAdapter {
             .and_then(|e| e.as_str())
             .map(str::to_string)
             .unwrap_or_else(|| MANGADEX_AT_HOME.to_string());
-        let url = format!("{}{}", self.md_base(), fill_url(&template, &[("chapterId", chapter_id), ("id", chapter_id)]));
+        let url = format!(
+            "{}{}",
+            self.md_base(),
+            fill_url(&template, &[("chapterId", chapter_id), ("id", chapter_id)])
+        );
         let body = self.http.get(&url, "mangadex").await?;
         let v: serde_json::Value = serde_json::from_str(&body)
             .map_err(|e| AppError::Network(format!("mangadex at-home json: {e}")))?;
         let base = v.get("baseUrl").and_then(|b| b.as_str()).unwrap_or("");
         let node = v.get("chapter");
-        let hash = node.and_then(|c| c.get("hash")).and_then(|h| h.as_str()).unwrap_or("");
+        let hash = node
+            .and_then(|c| c.get("hash"))
+            .and_then(|h| h.as_str())
+            .unwrap_or("");
         let files = node
             .and_then(|c| c.get("data"))
             .and_then(|d| d.as_array())
@@ -1303,10 +1369,14 @@ impl GenericRestAdapter {
                     .map(|a| (a, "data-saver"))
             });
         let Some((arr, seg)) = files else {
-            return Err(AppError::Network("mangadex at-home: payload kosong".to_string()));
+            return Err(AppError::Network(
+                "mangadex at-home: payload kosong".to_string(),
+            ));
         };
         if base.is_empty() || hash.is_empty() {
-            return Err(AppError::Network("mangadex at-home: base/hash hilang".to_string()));
+            return Err(AppError::Network(
+                "mangadex at-home: base/hash hilang".to_string(),
+            ));
         }
         Ok(arr
             .iter()
@@ -1328,11 +1398,19 @@ impl GenericRestAdapter {
                 let id = item.get("id")?.as_str()?;
                 let a = item.get("attributes")?;
                 // Chapter eksternal tak bisa at-home → tandai agar UI skip unduh.
-                let external = a.get("externalUrl").and_then(|u| u.as_str()).filter(|u| !u.is_empty()).map(str::to_string);
+                let external = a
+                    .get("externalUrl")
+                    .and_then(|u| u.as_str())
+                    .filter(|u| !u.is_empty())
+                    .map(str::to_string);
                 let num = a.get("chapter").and_then(|c| c.as_str()).unwrap_or("");
                 let vol = a.get("volume").and_then(|c| c.as_str()).unwrap_or("");
                 let name = a.get("title").and_then(|t| t.as_str()).unwrap_or("");
-                let mut title = if num.is_empty() { "Oneshot".to_string() } else { format!("Chapter {num}") };
+                let mut title = if num.is_empty() {
+                    "Oneshot".to_string()
+                } else {
+                    format!("Chapter {num}")
+                };
                 if !vol.is_empty() {
                     title = format!("Vol. {vol} · {title}");
                 }
@@ -1400,7 +1478,9 @@ impl GenericRestAdapter {
                 continue;
             }
             let attrs = item.get("attributes");
-            let title = attrs.map(Self::md_title).unwrap_or_else(|| "(tanpa judul)".to_string());
+            let title = attrs
+                .map(Self::md_title)
+                .unwrap_or_else(|| "(tanpa judul)".to_string());
             let cover = item
                 .get("relationships")
                 .and_then(|r| r.as_array())
@@ -1408,15 +1488,10 @@ impl GenericRestAdapter {
                     rels.iter()
                         .find(|r| r.get("type").and_then(|t| t.as_str()) == Some("cover_art"))
                         .and_then(|r| {
-                            r.get("attributes").and_then(|a| {
-                                a.get("fileName").and_then(|f| f.as_str())
-                            })
+                            r.get("attributes")
+                                .and_then(|a| a.get("fileName").and_then(|f| f.as_str()))
                         })
-                        .map(|f| {
-                            MANGADEX_COVER_TPL
-                                .replace("{id}", id)
-                                .replace("{file}", f)
-                        })
+                        .map(|f| MANGADEX_COVER_TPL.replace("{id}", id).replace("{file}", f))
                         .unwrap_or_default()
                 })
                 .unwrap_or_default();
@@ -1432,9 +1507,7 @@ impl GenericRestAdapter {
                 .and_then(|c| c.as_str())
                 .and_then(|c| c.parse::<u32>().ok());
             let upload_date = attrs
-                .and_then(|a| {
-                    a.get("updatedAt").or_else(|| a.get("createdAt"))
-                })
+                .and_then(|a| a.get("updatedAt").or_else(|| a.get("createdAt")))
                 .and_then(|d| d.as_str())
                 .filter(|d| !d.is_empty())
                 .map(str::to_string);
@@ -1563,8 +1636,16 @@ impl GenericScraperAdapter {
         let html = self.http.get(url, &config.source_id).await?;
         let doc = Html::parse_document(&html);
         let root = doc.root_element();
-        let tmap = if config.detail_title.selector.is_empty() { &config.title } else { &config.detail_title };
-        let cmap = if config.detail_cover.selector.is_empty() { &config.cover } else { &config.detail_cover };
+        let tmap = if config.detail_title.selector.is_empty() {
+            &config.title
+        } else {
+            &config.detail_title
+        };
+        let cmap = if config.detail_cover.selector.is_empty() {
+            &config.cover
+        } else {
+            &config.detail_cover
+        };
         let title_sel = Self::sel(&tmap.selector)?;
         let cover_sel = Self::sel(&cmap.selector)?;
         let title = extract(root, &title_sel, tmap);
@@ -1751,7 +1832,10 @@ impl GenericScraperAdapter {
         let html = self.http.get(url, &config.source_id).await?;
         let doc = Html::parse_document(&html);
         let sel = Self::sel(&config.page_selector)?;
-        let attr = config.page_attr.clone().unwrap_or_else(|| "src".to_string());
+        let attr = config
+            .page_attr
+            .clone()
+            .unwrap_or_else(|| "src".to_string());
         let map = FieldMap::attr(&config.page_selector, &attr);
         Ok(doc
             .select(&sel)
@@ -1856,8 +1940,8 @@ mod tests {
             cover: FieldMap::attr("img", "src"),
             detail_title: FieldMap::default(),
             detail_cover: FieldMap::default(),
-        detail_page_count: FieldMap::default(),
-        detail_language: FieldMap::default(),
+            detail_page_count: FieldMap::default(),
+            detail_language: FieldMap::default(),
             chapter_selector: "a.go".to_string(),
             chapter_link: FieldMap::attr("a.go", "href"),
             chapter_title: FieldMap::text("a.go"),
@@ -1894,9 +1978,10 @@ mod tests {
         let base = spawn_fixture();
         let http = HttpClientManager::without_proxy().unwrap();
         let scraper = GenericScraperAdapter::new(http);
-        let items =
-            tauri::async_runtime::block_on(scraper.fetch_list(&format!("{base}/list"), &nhentai_shaped()))
-                .unwrap();
+        let items = tauri::async_runtime::block_on(
+            scraper.fetch_list(&format!("{base}/list"), &nhentai_shaped()),
+        )
+        .unwrap();
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].id, "12345");
         assert_eq!(items[0].title, "Judul Satu");
@@ -1904,11 +1989,18 @@ mod tests {
         assert_eq!(items[1].cover_url, "https://t.example/2t.webp");
     }
 
-    fn mangadex_configured(http: HttpClientManager, base: &str, search_tpl: &str) -> GenericRestAdapter {
+    fn mangadex_configured(
+        http: HttpClientManager,
+        base: &str,
+        search_tpl: &str,
+    ) -> GenericRestAdapter {
         use crate::data::datasources::config::{ApiSection, SourceFile};
         use std::collections::HashMap;
         let mut endpoints = HashMap::new();
-        endpoints.insert("search".to_string(), serde_json::Value::String(search_tpl.to_string()));
+        endpoints.insert(
+            "search".to_string(),
+            serde_json::Value::String(search_tpl.to_string()),
+        );
         let file = SourceFile {
             source: "mangadex".to_string(),
             version: "test".to_string(),
@@ -1937,7 +2029,8 @@ mod tests {
         // Bug contentRating: raw satu nilai harus ganti SEMUA default
         // template (mobile `merged[key] = value`), bukan hanya kemunculan 1.
         let http = HttpClientManager::without_proxy().unwrap();
-        let tpl = "/manga?contentRating[]=safe&contentRating[]=suggestive&limit=100&offset={offset}";
+        let tpl =
+            "/manga?contentRating[]=safe&contentRating[]=suggestive&limit=100&offset={offset}";
         let adapter = mangadex_configured(http, "https://api.mangadex.org", tpl);
         let url = adapter.md_endpoint_raw("search", "contentRating[]=erotica", "0", tpl);
         assert_eq!(url.matches("contentRating[]=").count(), 1, "{url}");
@@ -1965,7 +2058,8 @@ mod tests {
             "enforceMultiValueParams": {"availableTranslatedLanguage[]": []},
             "ensureMultiValueParamsIfMissing": {"contentRating[]": ["safe"]}
         });
-        let url = GenericRestAdapter::apply_query_rules("https://x.example/manga?limit=5", Some(rules));
+        let url =
+            GenericRestAdapter::apply_query_rules("https://x.example/manga?limit=5", Some(rules));
         assert!(url.contains("hasAvailableChapters=true"), "{url}");
         assert!(url.contains("contentRating[]=safe"), "{url}");
     }
@@ -2047,8 +2141,7 @@ mod tests {
         let http = HttpClientManager::without_proxy().unwrap();
         // Suntik base API lewat URL langsung: uji parser via fetch + parse.
         let body =
-            tauri::async_runtime::block_on(http.get(&format!("{base}/api"), "mangadex"))
-                .unwrap();
+            tauri::async_runtime::block_on(http.get(&format!("{base}/api"), "mangadex")).unwrap();
         let items = GenericRestAdapter::parse_mangadex(&body).unwrap();
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].id, "manga-1");
@@ -2059,13 +2152,19 @@ mod tests {
         );
         assert_eq!(items[0].language.as_deref(), Some("ja"));
         assert_eq!(items[0].page_count, Some(42));
-        assert_eq!(items[0].upload_date.as_deref(), Some("2026-09-01T00:00:00+00:00"));
+        assert_eq!(
+            items[0].upload_date.as_deref(),
+            Some("2026-09-01T00:00:00+00:00")
+        );
         // Judul fallback altTitles; tanpa cover → string kosong.
         assert_eq!(items[1].title, "Alt Title Manga");
         assert!(items[1].cover_url.is_empty());
         assert_eq!(items[1].language.as_deref(), Some("en"));
         assert_eq!(items[1].page_count, None);
-        assert_eq!(items[1].upload_date.as_deref(), Some("2026-08-01T00:00:00+00:00"));
+        assert_eq!(
+            items[1].upload_date.as_deref(),
+            Some("2026-08-01T00:00:00+00:00")
+        );
     }
 
     #[test]
@@ -2075,9 +2174,10 @@ mod tests {
         let http = HttpClientManager::new().unwrap();
         let engine = GenericScraperAdapter::new(http);
         let cfg = ehentai_config();
-        let (items1, next) =
-            tauri::async_runtime::block_on(engine.fetch_list_with_next(&cfg.home_url_page(1), &cfg))
-                .unwrap();
+        let (items1, next) = tauri::async_runtime::block_on(
+            engine.fetch_list_with_next(&cfg.home_url_page(1), &cfg),
+        )
+        .unwrap();
         assert!(!items1.is_empty(), "home EH kosong (CF/cookie?)");
         let next_url = next.expect("halaman 1 EH tanpa link next");
         assert!(next_url.contains("next="), "{next_url}");
@@ -2086,7 +2186,8 @@ mod tests {
         let raw_url = cfg.search_url_raw("raw:f_search=english", 1);
         let (raw_items, _) =
             tauri::async_runtime::block_on(engine.fetch_list_with_next(&raw_url, &cfg)).unwrap();
-        assert!(!raw_items.is_empty(), "raw f_search kosong: {raw_url}");        let (items2, _) =
+        assert!(!raw_items.is_empty(), "raw f_search kosong: {raw_url}");
+        let (items2, _) =
             tauri::async_runtime::block_on(engine.fetch_list_with_next(&next_url, &cfg)).unwrap();
         assert!(!items2.is_empty(), "halaman 2 EH kosong");
         let ids1: HashSet<&str> = items1.iter().map(|c| c.id.as_str()).collect();
@@ -2102,8 +2203,7 @@ mod tests {
         // (risiko spec §7 — mitigasi: cookie harvest Fase 2 lanjutan).
         let http = HttpClientManager::new().unwrap();
         let rest = GenericRestAdapter::new(http);
-        let items =
-            tauri::async_runtime::block_on(rest.search_mangadex("test", 1)).unwrap();
+        let items = tauri::async_runtime::block_on(rest.search_mangadex("test", 1)).unwrap();
         assert!(!items.is_empty(), "live search mengembalikan item");
         assert!(!items[0].id.is_empty());
         assert!(!items[0].title.is_empty());
@@ -2111,8 +2211,7 @@ mod tests {
             tauri::async_runtime::block_on(rest.get_mangadex_detail(&items[0].id)).unwrap();
         assert_eq!(detail.id, items[0].id);
         // Home (allGalleries) + chapter + at-home 1:1 config.
-        let home =
-            tauri::async_runtime::block_on(rest.search_mangadex("", 1)).unwrap();
+        let home = tauri::async_runtime::block_on(rest.search_mangadex("", 1)).unwrap();
         assert!(!home.is_empty(), "allGalleries kosong");
         assert!(home[0].language.is_some(), "bahasa hilang: {:?}", home[0]);
         let chapters =
@@ -2178,9 +2277,15 @@ impl NhentaiApiAdapter {
         Self {
             http,
             limiter: crate::application::services::RateLimiter::new(cfg.min_delay_ms()),
-            search_tpl: ep("search", "/api/v2/search?query={query}&sort={sort}&page={page}"),
+            search_tpl: ep(
+                "search",
+                "/api/v2/search?query={query}&sort={sort}&page={page}",
+            ),
             all_tpl: ep("allGalleries", "/api/v2/galleries?page={page}"),
-            tag_tpl: ep("tagSearch", "/api/v2/galleries/tagged?tag_id={tagId}&page={page}"),
+            tag_tpl: ep(
+                "tagSearch",
+                "/api/v2/galleries/tagged?tag_id={tagId}&page={page}",
+            ),
             detail_tpl: ep("galleryDetail", "/api/v2/galleries/{id}"),
             thumb_host: host("thumbnail", "https://t.nhentai.net"),
             img_host: host("image", "https://i.nhentai.net"),
@@ -2195,8 +2300,7 @@ impl NhentaiApiAdapter {
             .http
             .get_with_retry(url, "nhentai", self.attempts, self.retry_delay_ms)
             .await?;
-        serde_json::from_str(&body)
-            .map_err(|e| AppError::Network(format!("nhentai json: {e}")))
+        serde_json::from_str(&body).map_err(|e| AppError::Network(format!("nhentai json: {e}")))
     }
 
     fn items_of(value: &serde_json::Value) -> Vec<serde_json::Value> {
@@ -2217,7 +2321,10 @@ impl NhentaiApiAdapter {
             .and_then(|v| v.as_str())
             .map(String::from)
             .or_else(|| {
-                item.get("title")?.get("english")?.as_str().map(String::from)
+                item.get("title")?
+                    .get("english")?
+                    .as_str()
+                    .map(String::from)
             })
             .unwrap_or_else(|| "(tanpa judul)".to_string());
         let cover = item
@@ -2268,7 +2375,11 @@ impl NhentaiApiAdapter {
             if !tag_id.trim().is_empty() {
                 return fill(
                     &self.tag_tpl.clone(),
-                    &[("tagId", tag_id.trim()), ("tag_id", tag_id.trim()), ("page", &page)],
+                    &[
+                        ("tagId", tag_id.trim()),
+                        ("tag_id", tag_id.trim()),
+                        ("page", &page),
+                    ],
                 );
             }
         }
@@ -2281,7 +2392,11 @@ impl NhentaiApiAdapter {
             .unwrap_or_else(|| "popular".to_string());
         fill(
             &self.search_tpl.clone(),
-            &[("query", &q.replace(' ', "+")), ("sort", &sort), ("page", &page)],
+            &[
+                ("query", &q.replace(' ', "+")),
+                ("sort", &sort),
+                ("page", &page),
+            ],
         )
     }
 
@@ -2295,7 +2410,8 @@ impl NhentaiApiAdapter {
     }
 
     pub async fn detail(&self, id: &str) -> Result<ContentModel, AppError> {
-        let url = crate::data::datasources::config::fill_url(&self.detail_tpl.clone(), &[("id", id)]);
+        let url =
+            crate::data::datasources::config::fill_url(&self.detail_tpl.clone(), &[("id", id)]);
         let v = self.fetch(&url).await?;
         let title = v
             .get("title")
@@ -2331,10 +2447,12 @@ impl NhentaiApiAdapter {
 
     /// URL gambar penuh satu galeri (untuk reader).
     pub async fn pages(&self, gallery_id: &str) -> Result<Vec<String>, AppError> {
-        let url = crate::data::datasources::config::fill_url(&self.detail_tpl.clone(), &[("id", gallery_id)]);
+        let url = crate::data::datasources::config::fill_url(
+            &self.detail_tpl.clone(),
+            &[("id", gallery_id)],
+        );
         let v = self.fetch(&url).await?;
-        Ok(v
-            .get("pages")
+        Ok(v.get("pages")
             .and_then(|p| p.as_array())
             .map(|arr| {
                 arr.iter()
@@ -2394,7 +2512,11 @@ mod nhentai_tests {
                 let mut buf = [0u8; 4096];
                 let len = stream.read(&mut buf).unwrap_or(0);
                 let req = String::from_utf8_lossy(&buf[..len]).to_string();
-                let path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/");
+                let path = req
+                    .lines()
+                    .next()
+                    .and_then(|l| l.split_whitespace().nth(1))
+                    .unwrap_or("/");
                 let body = if path.starts_with("/ak-detail") {
                     DETAIL
                 } else if path.starts_with("/ak-chapter") {
@@ -2404,7 +2526,8 @@ mod nhentai_tests {
                 };
                 let res = format!(
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(), body
+                    body.len(),
+                    body
                 );
                 stream.write_all(res.as_bytes()).unwrap();
             }
@@ -2425,9 +2548,9 @@ mod nhentai_tests {
                     "id": {"selector": "a.chapter-link", "attribute": "href", "transform": "slug"},
                     "title": {"selector": ".chap-num"}}}},
                 "reader": {"images": {"selector": "img", "attribute": "src"}}}}"#;
-        let file: crate::data::datasources::config::SourceFile = serde_json::from_str(
-            &format!(r#"{{"source": "areakomik-test", "baseUrl": "{base}", "scraper": {scraper_json}}}"#),
-        )
+        let file: crate::data::datasources::config::SourceFile = serde_json::from_str(&format!(
+            r#"{{"source": "areakomik-test", "baseUrl": "{base}", "scraper": {scraper_json}}}"#
+        ))
         .unwrap();
         let cfg = source_config_from_json(
             "areakomik-test",
@@ -2439,23 +2562,38 @@ mod nhentai_tests {
         assert_eq!(cfg.list_path, "/ak-list");
         let http = HttpClientManager::without_proxy().unwrap();
         let engine = GenericScraperAdapter::new(http);
-        let items = tauri::async_runtime::block_on(engine.fetch_list(&format!("{base}/ak-list"), &cfg)).unwrap();
+        let items =
+            tauri::async_runtime::block_on(engine.fetch_list(&format!("{base}/ak-list"), &cfg))
+                .unwrap();
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].id, "slug-satu");
         assert_eq!(items[0].title, "Judul Satu");
         assert_eq!(items[0].cover_url, "https://cdn.example/1.jpg");
         assert_eq!(items[0].language.as_deref(), Some("en"));
         assert_eq!(items[0].page_count, Some(24));
-        let detail = tauri::async_runtime::block_on(engine.fetch_detail(&format!("{base}/ak-detail"), &cfg)).unwrap();
+        let detail =
+            tauri::async_runtime::block_on(engine.fetch_detail(&format!("{base}/ak-detail"), &cfg))
+                .unwrap();
         assert_eq!(detail.title, "Judul Satu");
         assert_eq!(detail.cover_url, "https://cdn.example/cover.jpg");
-        let chapters = tauri::async_runtime::block_on(engine.fetch_chapters(&format!("{base}/ak-detail"), "x", &cfg)).unwrap();
+        let chapters = tauri::async_runtime::block_on(engine.fetch_chapters(
+            &format!("{base}/ak-detail"),
+            "x",
+            &cfg,
+        ))
+        .unwrap();
         assert_eq!(chapters.len(), 2);
         assert_eq!(chapters[0].id, "c1");
         assert_eq!(chapters[0].title, "Chapter 1");
         let expect_ch = format!("{base}/chapter/c1/");
-        assert_eq!(chapters[0].external_url.as_deref(), Some(expect_ch.as_str()));
-        let pages = tauri::async_runtime::block_on(engine.fetch_page_images(&format!("{base}/ak-chapter"), &cfg)).unwrap();
+        assert_eq!(
+            chapters[0].external_url.as_deref(),
+            Some(expect_ch.as_str())
+        );
+        let pages = tauri::async_runtime::block_on(
+            engine.fetch_page_images(&format!("{base}/ak-chapter"), &cfg),
+        )
+        .unwrap();
         assert_eq!(pages.len(), 2);
         assert!(pages[0].contains("gudangkomik"));
     }
@@ -2471,7 +2609,12 @@ mod nhentai_tests {
         // REST MangaDex: merge template + raw + offset paging.
         let http = HttpClientManager::without_proxy().unwrap();
         let rest = GenericRestAdapter::new(http);
-        let u = rest.md_endpoint_raw("search", "title=naruto&status=completed", "0", MANGADEX_SEARCH);
+        let u = rest.md_endpoint_raw(
+            "search",
+            "title=naruto&status=completed",
+            "0",
+            MANGADEX_SEARCH,
+        );
         assert!(u.contains("title=naruto"), "{u}");
         assert!(u.contains("status=completed"), "{u}");
         assert!(u.contains("offset=0"), "{u}");
@@ -2523,7 +2666,11 @@ mod nhentai_tests {
         assert_eq!(eh.home_path, "/?page={page}");
         // Load more home: halaman 2 WAJIB beda URL (bug 2026-09-20: ulang hal 1).
         assert!(eh.home_url_page(1).ends_with("/?page=1") || eh.home_url_page(1).ends_with("/"));
-        assert!(eh.home_url_page(2).contains("page=2"), "{}", eh.home_url_page(2));
+        assert!(
+            eh.home_url_page(2).contains("page=2"),
+            "{}",
+            eh.home_url_page(2)
+        );
     }
 
     #[test]
@@ -2542,11 +2689,17 @@ mod nhentai_tests {
         assert_eq!(items[0].cover_url, "https://ehgt.org/aa/bb.jpg");
         assert_eq!(items[0].language.as_deref(), Some("en"));
         let parts = GenericScraperAdapter::ehentai_part_chapters(
-            html, "https://e-hentai.org/g/12345/tokenab/", "12345/tokenab",
-        ).unwrap();
+            html,
+            "https://e-hentai.org/g/12345/tokenab/",
+            "12345/tokenab",
+        )
+        .unwrap();
         assert_eq!(parts.len(), 2);
         assert_eq!(parts[0].title, "Part 1");
-        assert_eq!(parts[1].external_url.as_deref(), Some("https://e-hentai.org/g/12345/tokenab/?p=1"));
+        assert_eq!(
+            parts[1].external_url.as_deref(),
+            Some("https://e-hentai.org/g/12345/tokenab/?p=1")
+        );
     }
 
     const SEARCH_JSON: &str = r#"{"result": [
@@ -2594,17 +2747,19 @@ mod nhentai_tests {
         assert_eq!(NhentaiApiAdapter::gallery_of_chapter("462098-1"), "462098");
         // Detail diparse dari bentuk live (tanpa network).
         let d: serde_json::Value = serde_json::from_str(DETAIL_JSON).unwrap();
-        assert_eq!(
-            d.get("title").unwrap().get("pretty").unwrap(),
-            "Judul Rapi"
-        );
+        assert_eq!(d.get("title").unwrap().get("pretty").unwrap(), "Judul Rapi");
         let pages: Vec<String> = d
             .get("pages")
             .unwrap()
             .as_array()
             .unwrap()
             .iter()
-            .map(|p| format!("https://i.nhentai.net/{}", p.get("path").unwrap().as_str().unwrap()))
+            .map(|p| {
+                format!(
+                    "https://i.nhentai.net/{}",
+                    p.get("path").unwrap().as_str().unwrap()
+                )
+            })
             .collect();
         assert_eq!(pages.len(), 2);
     }
@@ -2644,7 +2799,9 @@ mod nhentai_tests {
         assert!(a.search_url("test", 1).contains("query=test"));
         assert!(a.search_url("", 1).contains("/api/v2/galleries?page=1"));
         // raw tanpa query (cuma sort) → allGalleries, hindari 400.
-        assert!(a.search_url("raw:sort=date", 1).contains("/api/v2/galleries?page=1"));
+        assert!(a
+            .search_url("raw:sort=date", 1)
+            .contains("/api/v2/galleries?page=1"));
     }
 
     #[test]
@@ -2662,8 +2819,7 @@ mod nhentai_tests {
         let items = tauri::async_runtime::block_on(a.search("test", 1)).unwrap();
         assert!(!items.is_empty());
         assert!(!items[0].cover_url.is_empty());
-        let detail =
-            tauri::async_runtime::block_on(a.detail(&items[0].id)).unwrap();
+        let detail = tauri::async_runtime::block_on(a.detail(&items[0].id)).unwrap();
         assert_eq!(detail.id, items[0].id);
         let pages = tauri::async_runtime::block_on(a.pages(&items[0].id)).unwrap();
         assert!(!pages.is_empty());

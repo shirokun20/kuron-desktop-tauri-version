@@ -27,7 +27,8 @@ impl ImageCache {
         page: u32,
         bytes: &[u8],
     ) -> Result<(), AppError> {
-        self.inner.put(&Self::key(source_id, content_id, page), bytes)
+        self.inner
+            .put(&Self::key(source_id, content_id, page), bytes)
     }
 
     pub fn page(

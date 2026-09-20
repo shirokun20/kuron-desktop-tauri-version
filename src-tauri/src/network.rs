@@ -2,10 +2,7 @@
 //! `HttpClientManager`: reqwest (rustls, cookie jar, timeout 30s) + UA per sumber.
 //! `dns_resolver`: lookup DoH eksplisit (Cloudflare) untuk diagnostik / CF-bypass nanti.
 
-use std::{
-    net::IpAddr,
-    time::Duration,
-};
+use std::{net::IpAddr, time::Duration};
 
 use reqwest::{
     header::{HeaderMap, HeaderValue, USER_AGENT},
@@ -29,7 +26,10 @@ pub fn user_agent_for(source_id: &str) -> &'static str {
 /// Header default untuk satu sumber (UA + accept generik).
 pub fn headers_for_source(source_id: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, HeaderValue::from_static(user_agent_for(source_id)));
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_static(user_agent_for(source_id)),
+    );
     headers.insert(
         "Accept",
         HeaderValue::from_static(
@@ -103,12 +103,23 @@ impl HttpClientManager {
     ) -> Result<String, AppError> {
         let mut last_err = AppError::Network("tanpa percobaan".to_string());
         for attempt in 0..attempts.max(1) {
-            match self.client.get(url).headers(headers_for_source(source_id)).send().await {
+            match self
+                .client
+                .get(url)
+                .headers(headers_for_source(source_id))
+                .send()
+                .await
+            {
                 Ok(res) => {
                     if res.status().is_server_error() && attempt + 1 < attempts.max(1) {
                         last_err = AppError::Network(format!("HTTP {}", res.status()));
                     } else {
-                        return res.error_for_status().map_err(AppError::from)?.text().await.map_err(AppError::from);
+                        return res
+                            .error_for_status()
+                            .map_err(AppError::from)?
+                            .text()
+                            .await
+                            .map_err(AppError::from);
                     }
                 }
                 Err(e) => {
@@ -157,20 +168,26 @@ pub async fn resolve_doh(host: &str) -> Result<Vec<IpAddr>, AppError> {
         .error_for_status()?
         .text()
         .await?;
-    let v: serde_json::Value = serde_json::from_str(&body)
-        .map_err(|e| AppError::Network(format!("DoH json: {e}")))?;
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| AppError::Network(format!("DoH json: {e}")))?;
     let mut ips = Vec::new();
     if let Some(arr) = v.get("Answer").and_then(|a| a.as_array()) {
         for ans in arr {
             if ans.get("type").and_then(|t| t.as_u64()) == Some(1) {
-                if let Some(ip) = ans.get("data").and_then(|d| d.as_str()).and_then(|s| s.parse::<IpAddr>().ok()) {
+                if let Some(ip) = ans
+                    .get("data")
+                    .and_then(|d| d.as_str())
+                    .and_then(|s| s.parse::<IpAddr>().ok())
+                {
                     ips.push(ip);
                 }
             }
         }
     }
     if ips.is_empty() {
-        return Err(AppError::Network(format!("DoH: tanpa jawaban A untuk {host}")));
+        return Err(AppError::Network(format!(
+            "DoH: tanpa jawaban A untuk {host}"
+        )));
     }
     Ok(ips)
 }
@@ -295,8 +312,7 @@ mod tests {
     #[test]
     #[ignore = "butuh internet (DoH Cloudflare); jalankan manual: cargo test resolve_doh -- --ignored"]
     fn resolve_doh_cloudflare() {
-        let ips =
-            tauri::async_runtime::block_on(resolve_doh("one.one.one.one")).unwrap();
+        let ips = tauri::async_runtime::block_on(resolve_doh("one.one.one.one")).unwrap();
         assert!(!ips.is_empty());
     }
 }

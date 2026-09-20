@@ -6,8 +6,8 @@ use tauri::State;
 
 use crate::{
     application::{
-        GetChaptersUseCase, GetContentDetailUseCase, GetHomeFeedUseCase,
-        GetPageImagesUseCase, SearchContentUseCase,
+        GetChaptersUseCase, GetContentDetailUseCase, GetHomeFeedUseCase, GetPageImagesUseCase,
+        SearchContentUseCase,
     },
     core::AppState,
     domain::{Chapter, Content, PageImageResult, SearchFilter},
@@ -22,9 +22,14 @@ pub async fn cmd_home_feed(
     let page = page.unwrap_or(1).max(1);
     let repo = match source.as_deref() {
         None | Some("semua") => state.content_repo.clone(),
-        Some(id) => state.repo_for(&id.to_lowercase()).map_err(|e| e.to_string())?,
+        Some(id) => state
+            .repo_for(&id.to_lowercase())
+            .map_err(|e| e.to_string())?,
     };
-    GetHomeFeedUseCase::new(repo).execute(page).await.map_err(|e| e.to_string())
+    GetHomeFeedUseCase::new(repo)
+        .execute(page)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -34,9 +39,9 @@ pub async fn cmd_search(
 ) -> Result<Vec<Content>, String> {
     // Search ikut sumber aktif seperti home_feed (dulu mock-only — bug 4c).
     let repo = match filter.source_id.as_deref() {
-        Some(id) if !id.is_empty() && id != "semua" => {
-            state.repo_for(&id.to_lowercase()).map_err(|e| e.to_string())?
-        }
+        Some(id) if !id.is_empty() && id != "semua" => state
+            .repo_for(&id.to_lowercase())
+            .map_err(|e| e.to_string())?,
         _ => state.content_repo.clone(),
     };
     SearchContentUseCase::new(repo)
@@ -56,14 +61,11 @@ pub async fn cmd_search_form(
 ) -> Result<serde_json::Value, String> {
     use crate::data::datasources::config::SourceConfigs;
     let id = source.to_lowercase();
-    let overlay = SourceConfigs::load_overlay(
-        &SourceConfigs::bundled_dir(),
-        &state.ext_dir,
-    )
-    .map_err(|e| e.to_string())?;
-    let file = overlay.get(&id).ok_or_else(|| {
-        format!("sumber '{id}' belum ter-install — pasang via Ekstensi")
-    })?;
+    let overlay = SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &state.ext_dir)
+        .map_err(|e| e.to_string())?;
+    let file = overlay
+        .get(&id)
+        .ok_or_else(|| format!("sumber '{id}' belum ter-install — pasang via Ekstensi"))?;
     let mut form = file.search_form.clone();
     if !form.is_object() {
         return Ok(serde_json::Value::Null);
@@ -86,19 +88,16 @@ pub async fn cmd_search_form(
                 format!("{}{}", file.base_url, ep)
             };
             match state.http.get(&url, &id).await {
-                Ok(body) => {
-                    match resolve_form_options(&body, &def) {
-                        Some(opts) => {
-                            entry["options"] = opts;
-                        }
-                        None => {
-                            entry["options"] = serde_json::Value::Array(vec![]);
-                            entry["error"] = serde_json::Value::String(
-                                "gagal parse respons endpoint".to_string(),
-                            );
-                        }
+                Ok(body) => match resolve_form_options(&body, &def) {
+                    Some(opts) => {
+                        entry["options"] = opts;
                     }
-                }
+                    None => {
+                        entry["options"] = serde_json::Value::Array(vec![]);
+                        entry["error"] =
+                            serde_json::Value::String("gagal parse respons endpoint".to_string());
+                    }
+                },
                 Err(e) => {
                     entry["options"] = serde_json::Value::Array(vec![]);
                     entry["error"] = serde_json::Value::String(e.to_string());
@@ -112,14 +111,15 @@ pub async fn cmd_search_form(
     // `[[id,name,slug,typeCode,count],...]`, saring via `tagType`).
     if let Some(params) = form.get_mut("params").and_then(|p| p.as_object_mut()) {
         for (_key, def) in params.iter_mut() {
-            let url = def.get("tagSourceUrl").and_then(|u| u.as_str()).unwrap_or("");
+            let url = def
+                .get("tagSourceUrl")
+                .and_then(|u| u.as_str())
+                .unwrap_or("");
             if url.trim().is_empty() {
                 continue;
             }
             let tag_type = def.get("tagType").and_then(|t| t.as_str()).unwrap_or("");
-            if let Some(opts) =
-                resolve_tag_url_options(&state.http, &id, url, tag_type).await
-            {
+            if let Some(opts) = resolve_tag_url_options(&state.http, &id, url, tag_type).await {
                 if !opts.is_empty() {
                     def["options"] = serde_json::Value::Array(opts);
                 }
@@ -180,14 +180,20 @@ fn tag_code_name(code: i64) -> String {
 }
 
 /// Petakan respons endpoint `dataSources` jadi `[{value,label,group?}]`.
-fn resolve_form_options(
-    body: &str,
-    def: &serde_json::Value,
-) -> Option<serde_json::Value> {
+fn resolve_form_options(body: &str, def: &serde_json::Value) -> Option<serde_json::Value> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
-    let items_path = def.get("itemsPath").and_then(|s| s.as_str()).unwrap_or("data");
-    let value_path = def.get("valuePath").and_then(|s| s.as_str()).unwrap_or("id");
-    let label_path = def.get("labelPath").and_then(|s| s.as_str()).unwrap_or(value_path);
+    let items_path = def
+        .get("itemsPath")
+        .and_then(|s| s.as_str())
+        .unwrap_or("data");
+    let value_path = def
+        .get("valuePath")
+        .and_then(|s| s.as_str())
+        .unwrap_or("id");
+    let label_path = def
+        .get("labelPath")
+        .and_then(|s| s.as_str())
+        .unwrap_or(value_path);
     let group_path = def.get("groupPath").and_then(|s| s.as_str());
     let items = nav_json(&v, items_path)?.as_array()?;
     let mut out = Vec::new();
@@ -252,14 +258,11 @@ pub async fn cmd_tag_query(
 ) -> Result<String, String> {
     use crate::data::datasources::config::SourceConfigs;
     let id = source.to_lowercase();
-    let overlay = SourceConfigs::load_overlay(
-        &SourceConfigs::bundled_dir(),
-        &state.ext_dir,
-    )
-    .map_err(|e| e.to_string())?;
-    let file = overlay.get(&id).ok_or_else(|| {
-        format!("sumber '{id}' belum ter-install — pasang via Ekstensi")
-    })?;
+    let overlay = SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &state.ext_dir)
+        .map_err(|e| e.to_string())?;
+    let file = overlay
+        .get(&id)
+        .ok_or_else(|| format!("sumber '{id}' belum ter-install — pasang via Ekstensi"))?;
     let mapping = file
         .navigation
         .get("tagQueryMapping")
@@ -275,7 +278,9 @@ fn build_tag_query(
     source_id: &str,
 ) -> Result<String, String> {
     let pick = |t: &str| mapping?.get(t).or_else(|| mapping?.get("default"));
-    let def = pick(&tag_type.to_lowercase()).cloned().unwrap_or(serde_json::Value::Null);
+    let def = pick(&tag_type.to_lowercase())
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let mode = def.get("mode").and_then(|m| m.as_str()).unwrap_or("name");
     if mode == "name" || def.is_null() {
         return Ok(tag_name.to_string());
@@ -285,12 +290,23 @@ fn build_tag_query(
     if param.is_empty() {
         return Ok(tag_name.to_string());
     }
-    let source_kind = def.get("valueSource").and_then(|s| s.as_str()).unwrap_or("tagName");
+    let source_kind = def
+        .get("valueSource")
+        .and_then(|s| s.as_str())
+        .unwrap_or("tagName");
     let mut value = match source_kind {
-        "tagId" => def.get("tagId").and_then(|v| v.as_str()).unwrap_or(tag_name).to_string(),
+        "tagId" => def
+            .get("tagId")
+            .and_then(|v| v.as_str())
+            .unwrap_or(tag_name)
+            .to_string(),
         "tagIdOrName" => {
             let v = def.get("tagId").and_then(|x| x.as_str()).unwrap_or("");
-            if v.is_empty() { tag_name.to_string() } else { v.to_string() }
+            if v.is_empty() {
+                tag_name.to_string()
+            } else {
+                v.to_string()
+            }
         }
         _ => tag_name.to_string(),
     };
@@ -298,12 +314,21 @@ fn build_tag_query(
         value = value.to_lowercase();
     }
     if let Some(pat) = def.get("requiredPattern").and_then(|p| p.as_str()) {
-        if regex::Regex::new(pat).map(|re| !re.is_match(&value)).unwrap_or(false) {
+        if regex::Regex::new(pat)
+            .map(|re| !re.is_match(&value))
+            .unwrap_or(false)
+        {
             return Err(format!("nilai tag tak valid untuk sumber '{source_id}'"));
         }
     }
-    let prefix = def.get("valuePrefix").and_then(|p| p.as_str()).unwrap_or("");
-    let suffix = def.get("valueSuffix").and_then(|s| s.as_str()).unwrap_or("");
+    let prefix = def
+        .get("valuePrefix")
+        .and_then(|p| p.as_str())
+        .unwrap_or("");
+    let suffix = def
+        .get("valueSuffix")
+        .and_then(|s| s.as_str())
+        .unwrap_or("");
     Ok(format!("raw:{param}={prefix}{value}{suffix}"))
 }
 
@@ -361,20 +386,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(found.len(), 8);
-        assert!(
-            tauri::async_runtime::block_on(
-                GetChaptersUseCase::new(MockContentRepository).execute("m1")
-            )
-            .unwrap()
-            .is_empty()
-        );
-        assert!(
-            tauri::async_runtime::block_on(
-                GetPageImagesUseCase::new(MockContentRepository).execute("c1")
-            )
-            .unwrap()
-            .is_empty()
-        );
+        assert!(tauri::async_runtime::block_on(
+            GetChaptersUseCase::new(MockContentRepository).execute("m1")
+        )
+        .unwrap()
+        .is_empty());
+        assert!(tauri::async_runtime::block_on(
+            GetPageImagesUseCase::new(MockContentRepository).execute("c1")
+        )
+        .unwrap()
+        .is_empty());
     }
 
     #[test]

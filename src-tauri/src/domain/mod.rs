@@ -55,7 +55,9 @@ mod roundtrip_tests {
     #[test]
     fn page_images_downloads() {
         assert_roundtrip(&PageImageResult::Cached("/tmp/p1.jpg".into()));
-        assert_roundtrip(&PageImageResult::Remote("https://cdn.example/p1.jpg".into()));
+        assert_roundtrip(&PageImageResult::Remote(
+            "https://cdn.example/p1.jpg".into(),
+        ));
         for state in [
             DownloadState::Queued,
             DownloadState::Downloading { page: 3, total: 40 },

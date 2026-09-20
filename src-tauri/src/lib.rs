@@ -7,11 +7,10 @@ pub mod domain;
 pub mod network;
 
 use commands::{
-    cmd_app_info, cmd_extension_install, cmd_extension_install_zip_file, cmd_extension_install_zip_url,
-    cmd_extension_manifest, cmd_extension_uninstall, cmd_get_chapters, cmd_get_detail,
-    cmd_get_page_images, cmd_hello_world, cmd_home_feed, cmd_search, cmd_search_form,
-    cmd_tag_query,
-    cmd_sources_list,
+    cmd_app_info, cmd_extension_install, cmd_extension_install_staged_zip,
+    cmd_extension_install_zip_file, cmd_extension_manifest, cmd_extension_preview_zip_url,
+    cmd_extension_uninstall, cmd_get_chapters, cmd_get_detail, cmd_get_page_images,
+    cmd_hello_world, cmd_home_feed, cmd_search, cmd_search_form, cmd_sources_list, cmd_tag_query,
 };
 use core::{logger, AppState};
 use tauri::{
@@ -39,13 +38,7 @@ pub fn run() {
                 "Kuron",
                 true,
                 &[
-                    &MenuItem::with_id(
-                        app,
-                        "about-kuron",
-                        "Tentang Kuron",
-                        true,
-                        None::<&str>,
-                    )?,
+                    &MenuItem::with_id(app, "about-kuron", "Tentang Kuron", true, None::<&str>)?,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::services(app, None)?,
                     &PredefinedMenuItem::separator(app)?,
@@ -143,12 +136,13 @@ pub fn run() {
                     }));
                     let _ = win.set_focus();
                 } else {
-                    let _ = WebviewWindowBuilder::new(app, "about", WebviewUrl::App("/#about".into()))
-                        .title("Tentang Kuron")
-                        .inner_size(560.0, 800.0)
-                        .center()
-                        .resizable(false)
-                        .build();
+                    let _ =
+                        WebviewWindowBuilder::new(app, "about", WebviewUrl::App("/#about".into()))
+                            .title("Tentang Kuron")
+                            .inner_size(560.0, 800.0)
+                            .center()
+                            .resizable(false)
+                            .build();
                 }
             }
             "toggle-sidebar" => {
@@ -184,7 +178,8 @@ pub fn run() {
             cmd_extension_install,
             cmd_extension_uninstall,
             cmd_extension_install_zip_file,
-            cmd_extension_install_zip_url
+            cmd_extension_preview_zip_url,
+            cmd_extension_install_staged_zip
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

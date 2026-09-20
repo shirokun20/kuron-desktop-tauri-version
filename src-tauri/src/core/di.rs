@@ -9,8 +9,8 @@ use crate::{
         datasources::{
             config::SourceConfigs,
             remote::{
-                ehentai_config, hitomi_config, FieldMap, GenericRestAdapter,
-                GenericScraperAdapter, NhentaiApiAdapter, PaginationCursors, SourceConfig,
+                ehentai_config, hitomi_config, FieldMap, GenericRestAdapter, GenericScraperAdapter,
+                NhentaiApiAdapter, PaginationCursors, SourceConfig,
             },
         },
         repositories::{ContentRepositoryImpl, MockContentRepository},
@@ -87,13 +87,15 @@ impl AppState {
     }
 
     /// Repo untuk satu sumber ter-install (atau bawaan). Error bila tak dikenal.
-    pub fn repo_for(&self, source_id: &str) -> Result<Arc<dyn ContentRepository>, crate::core::AppError> {
+    pub fn repo_for(
+        &self,
+        source_id: &str,
+    ) -> Result<Arc<dyn ContentRepository>, crate::core::AppError> {
         use crate::core::AppError;
         if source_id == "semua" {
             return Ok(self.content_repo.clone());
         }
-        let overlay =
-            SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &self.ext_dir)?;
+        let overlay = SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &self.ext_dir)?;
         let source_cfg = overlay.get(source_id).ok_or_else(|| {
             AppError::Validation(format!(
                 "sumber '{source_id}' belum ter-install — pasang via Ekstensi"
@@ -154,7 +156,7 @@ impl AppState {
                     list_path: String::new(),
                     home_path: String::new(),
                     home_page_path: String::new(),
-                pagination_next: String::new(),
+                    pagination_next: String::new(),
                     detail_path: String::new(),
                     item_selector: String::new(),
                     id: FieldMap::default(),
@@ -175,19 +177,22 @@ impl AppState {
                     default_language: None,
                 });
                 Ok(Arc::new(
-                    ContentRepositoryImpl::new(scraper, rest, scfg).with_pagination(self.cursors.clone()),
+                    ContentRepositoryImpl::new(scraper, rest, scfg)
+                        .with_pagination(self.cursors.clone()),
                 ))
             }
             _ => {
                 // JSON config (ehentai/hitomi/areakomik dkk) → engine generik.
                 if let Some(file) = overlay.get(source_id) {
                     if let Some(scraper_sec) = file.scraper.as_ref() {
-                        if let Some(scfg) = crate::data::datasources::remote::source_config_from_json(
-                            source_id,
-                            &file.base_url,
-                            scraper_sec,
-                            &file.default_language,
-                        ) {
+                        if let Some(scfg) =
+                            crate::data::datasources::remote::source_config_from_json(
+                                source_id,
+                                &file.base_url,
+                                scraper_sec,
+                                &file.default_language,
+                            )
+                        {
                             return Ok(Arc::new(
                                 ContentRepositoryImpl::new(scraper, rest, scfg)
                                     .with_pagination(self.cursors.clone()),
@@ -198,7 +203,8 @@ impl AppState {
                 // Hardcode hanya fallback bila JSON tak punya pola list.
                 match Self::scraper_config_for(source_id) {
                     Some(scfg) => Ok(Arc::new(
-                        ContentRepositoryImpl::new(scraper, rest, scfg).with_pagination(self.cursors.clone()),
+                        ContentRepositoryImpl::new(scraper, rest, scfg)
+                            .with_pagination(self.cursors.clone()),
                     )),
                     None => Err(AppError::Validation(format!(
                         "sumber '{source_id}' ter-install tapi pola scraper-nya tak didukung engine"
@@ -213,8 +219,7 @@ impl AppState {
     /// manifest), lalu `ui.iconPath` dari config itu sendiri (bundled/lokal),
     /// terakhir None (UI pakai fallback inisial).
     pub fn source_entries(&self) -> Result<Vec<InstalledSource>, crate::core::AppError> {
-        let overlay =
-            SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &self.ext_dir)?;
+        let overlay = SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &self.ext_dir)?;
         let mut out: Vec<InstalledSource> = overlay
             .iter()
             .map(|(id, cfg)| {
@@ -266,8 +271,7 @@ mod tests {
     #[test]
     fn default_state_serves_mock_feed() {
         let feed =
-            tauri::async_runtime::block_on(AppState::default().content_repo.home_feed(1))
-                .unwrap();
+            tauri::async_runtime::block_on(AppState::default().content_repo.home_feed(1)).unwrap();
         assert_eq!(feed.len(), 8);
     }
 
@@ -277,9 +281,17 @@ mod tests {
         use crate::domain::{repositories::ContentRepository, SearchFilter};
         let state = AppState::default();
         let repo = state.repo_for("mangadex").unwrap();
-        for q in ["raw:contentRating[]=erotica", "raw:contentRating%5B%5D=erotica"] {
-            let filter = SearchFilter { query: q.to_string(), source_id: Some("mangadex".to_string()), page: 1 };
-            let items = tauri::async_runtime::block_on(async { repo.search(filter).await }).unwrap();
+        for q in [
+            "raw:contentRating[]=erotica",
+            "raw:contentRating%5B%5D=erotica",
+        ] {
+            let filter = SearchFilter {
+                query: q.to_string(),
+                source_id: Some("mangadex".to_string()),
+                page: 1,
+            };
+            let items =
+                tauri::async_runtime::block_on(async { repo.search(filter).await }).unwrap();
             assert!(!items.is_empty(), "rating {q} kosong");
         }
     }
@@ -340,7 +352,10 @@ mod tests {
         .unwrap();
         let entries = state.source_entries().unwrap();
         let nh = entries.iter().find(|s| s.id == "nhentai").unwrap();
-        assert_eq!(nh.icon_url.as_deref(), Some("https://cdn.example.com/nhentai.png"));
+        assert_eq!(
+            nh.icon_url.as_deref(),
+            Some("https://cdn.example.com/nhentai.png")
+        );
         assert_eq!(nh.display_name.as_deref(), Some("NHentai"));
         assert!(nh.installed);
         std::fs::remove_dir_all(&dir).ok();
@@ -387,9 +402,13 @@ mod tests {
         let overlay = SourceConfigs::load_overlay(&SourceConfigs::bundled_dir(), &dir).unwrap();
         assert!(overlay.get("areakomik").is_some());
         let scraper_sec = cfg_file.scraper.as_ref().expect("areakomik punya scraper");
-        let scfg =
-            source_config_from_json("areakomik", &cfg_file.base_url, scraper_sec, &cfg_file.default_language)
-                .expect("pola areakomik terbaca");
+        let scfg = source_config_from_json(
+            "areakomik",
+            &cfg_file.base_url,
+            scraper_sec,
+            &cfg_file.default_language,
+        )
+        .expect("pola areakomik terbaca");
         let repo = ContentRepositoryImpl::new(
             GenericScraperAdapter::new(http.clone()),
             GenericRestAdapter::new(http),
@@ -406,6 +425,8 @@ mod tests {
         let state = AppState::default();
         assert!(state.repo_for("nhentai").is_ok());
         let entries = state.source_entries().unwrap();
-        assert!(entries.iter().any(|e| e.id == "nhentai" && !e.version.is_empty()));
+        assert!(entries
+            .iter()
+            .any(|e| e.id == "nhentai" && !e.version.is_empty()));
     }
 }

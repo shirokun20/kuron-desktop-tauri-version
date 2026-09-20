@@ -2,17 +2,19 @@
   // ExtensionManagerPage — popup "Ekstensi" (hash #extensions), 1:1 alur mobile:
   // daftar URL manifest → fetch daftar → install/uninstall per sumber + install zip.
   import { onMount } from "svelte";
-  import { api, DEFAULT_MANIFEST_URL } from "../api/client";
-  import type { ManifestEntry } from "../domain/types";
+  import { api } from "../api/client";
+  import type { ManifestEntry, ZipPreview } from "../domain/types";
   import { sourceStore } from "../stores/source.svelte";
 
-  let manifestUrl = $state(DEFAULT_MANIFEST_URL);
+  let manifestUrl = $state("");
   let entries = $state<ManifestEntry[]>([]);
   let zipUrl = $state("");
   let loading = $state(false);
   let busy = $state<string | null>(null);
   let err = $state<string | null>(null);
   let notice = $state<string | null>(null);
+  let zipPreview = $state<ZipPreview | null>(null);
+  let zipSelected = $state<string[]>([]);
 
   const installedIds = $derived(
     new Set(sourceStore.available.map((s) => s.id)),
@@ -20,10 +22,14 @@
 
   onMount(() => {
     sourceStore.load();
-    fetchManifest();
   });
 
   async function fetchManifest() {
+    if (!manifestUrl.trim()) {
+      err = "Isi URL manifest terlebih dahulu.";
+      entries = [];
+      return;
+    }
     loading = true;
     err = null;
     notice = null;
@@ -39,6 +45,10 @@
   }
 
   async function install(id: string) {
+    if (!manifestUrl.trim()) {
+      err = "Isi URL manifest terlebih dahulu.";
+      return;
+    }
     busy = id;
     err = null;
     notice = null;
@@ -68,15 +78,19 @@
     }
   }
 
-  async function installZip() {
+  function prepareZip(preview: ZipPreview) {
+    zipPreview = preview;
+    zipSelected = [];
+  }
+
+  async function previewZip() {
     if (!zipUrl.trim()) return;
     busy = "zip";
     err = null;
     notice = null;
     try {
-      const ids = await api.extInstallZip(zipUrl.trim());
-      notice = ids.length > 0 ? `terpasang: ${ids.join(", ")}` : "zip tak berisi config.";
-      await sourceStore.load();
+      prepareZip(await api.extPreviewZip(zipUrl.trim()));
+      notice = "Pilih sumber yang ingin dipasang.";
     } catch (e) {
       err = `install zip gagal: ${e}`;
     } finally {
@@ -84,13 +98,36 @@
     }
   }
 
-  async function installZipFile() {
+  async function previewZipFile() {
     busy = "zipfile";
     err = null;
     notice = null;
     try {
-      const ids = await api.extInstallZipFile();
-      notice = ids.length > 0 ? `terpasang: ${ids.join(", ")}` : "zip tak berisi config.";
+      prepareZip(await api.extPreviewZipFile());
+      notice = "Pilih sumber yang ingin dipasang.";
+    } catch (e) {
+      err = `install zip gagal: ${e}`;
+    } finally {
+      busy = null;
+    }
+  }
+
+  function toggleZipSource(id: string) {
+    zipSelected = zipSelected.includes(id)
+      ? zipSelected.filter((selected) => selected !== id)
+      : [...zipSelected, id];
+  }
+
+  async function installSelectedZip() {
+    if (!zipPreview || zipSelected.length === 0) return;
+    busy = "zip-install";
+    err = null;
+    notice = null;
+    try {
+      const ids = await api.extInstallStagedZip(zipPreview.token, zipSelected);
+      notice = ids.length > 0 ? `terpasang: ${ids.join(", ")}` : "tak ada sumber dipasang.";
+      zipPreview = null;
+      zipSelected = [];
       await sourceStore.load();
     } catch (e) {
       err = `install zip gagal: ${e}`;
@@ -163,16 +200,51 @@
 
   <h2>Install dari zip</h2>
   <div class="rowline">
-    <button onclick={installZipFile} disabled={busy === "zipfile"}>
+    <button onclick={previewZipFile} disabled={busy === "zipfile"}>
       {busy === "zipfile" ? "…" : "Pilih file .zip…"}
     </button>
   </div>
   <div class="rowline" style="margin-top: 8px;">
     <input bind:value={zipUrl} placeholder="…atau tempel URL https://…/ekstensi.zip" />
-    <button onclick={installZip} disabled={busy === "zip" || !zipUrl.trim()}>
-      {busy === "zip" ? "…" : "Pasang"}
+    <button onclick={previewZip} disabled={busy === "zip" || !zipUrl.trim()}>
+      {busy === "zip" ? "…" : "Muat zip"}
     </button>
   </div>
+  {#if zipPreview}
+    <div class="zip-preview">
+      <strong>Pilih sumber yang akan dipasang</strong>
+      {#each zipPreview.sources as source (source.id)}
+        <label class="zip-source">
+          <input
+            type="checkbox"
+            checked={zipSelected.includes(source.id)}
+            onchange={() => toggleZipSource(source.id)}
+          />
+          {#if source.iconUrl}
+            <img src={source.iconUrl} alt="" />
+          {:else}
+            <span class="icon-fallback">{source.id.slice(0, 1).toUpperCase()}</span>
+          {/if}
+          <span class="zip-source-info">
+            <strong>{source.displayName ?? source.id}</strong>
+            <small>{source.id} • v{source.version}</small>
+          </span>
+        </label>
+      {:else}
+        <p class="muted">Zip tak berisi config sumber.</p>
+      {/each}
+      <div class="zip-actions">
+        <button class="ghost" onclick={() => (zipPreview = null)}>Batal</button>
+        <button
+          class="ghost"
+          onclick={installSelectedZip}
+          disabled={busy === "zip-install" || zipSelected.length === 0}
+        >
+          {busy === "zip-install" ? "…" : `Pasang terpilih (${zipSelected.length})`}
+        </button>
+      </div>
+    </div>
+  {/if}
 </main>
 
 <style>
@@ -247,6 +319,57 @@
   .muted {
     color: var(--muted-foreground);
     font-size: 13px;
+  }
+  .zip-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--card);
+  }
+  .zip-source {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .zip-source:hover {
+    background: var(--muted);
+  }
+  .zip-source img,
+  .icon-fallback {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex: 0 0 32px;
+  }
+  .icon-fallback {
+    display: grid;
+    place-items: center;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    font-weight: 700;
+  }
+  .zip-source-info {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .zip-source-info small {
+    color: var(--muted-foreground);
+  }
+  .zip-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
   }
   .list {
     display: flex;

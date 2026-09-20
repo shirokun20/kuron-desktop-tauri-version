@@ -6,10 +6,8 @@ import type {
   ExtensionManifest,
   Hello,
   InstalledSource,
+  ZipPreview,
 } from "../domain/types";
-
-export const DEFAULT_MANIFEST_URL =
-  "https://raw.githubusercontent.com/shirokun20/kuron-extensions/main/manifest.json";
 
 /** Mode web (dibuka via browser): backend Rust tidak ada. */
 export const WEB_OFFLINE_MSG =
@@ -59,8 +57,10 @@ export const api = {
     call("cmd_extension_install", { manifestUrl, id }),
   extUninstall: (id: string): Promise<boolean> =>
     call("cmd_extension_uninstall", { id }),
-  extInstallZip: (url: string): Promise<string[]> =>
-    call("cmd_extension_install_zip_url", { url }),
-  extInstallZipFile: (): Promise<string[]> =>
+  extPreviewZip: (url: string): Promise<ZipPreview> =>
+    call("cmd_extension_preview_zip_url", { url }),
+  extPreviewZipFile: (): Promise<ZipPreview> =>
     call("cmd_extension_install_zip_file"),
+  extInstallStagedZip: (token: string, selected: string[]): Promise<string[]> =>
+    call("cmd_extension_install_staged_zip", { token, selected }),
 };

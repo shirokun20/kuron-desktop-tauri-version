@@ -12,7 +12,11 @@ pub struct Hello {
 impl Hello {
     pub fn new(name: impl Into<String>) -> Self {
         let name = name.into().trim().to_string();
-        let name = if name.is_empty() { "Kuron".to_string() } else { name };
+        let name = if name.is_empty() {
+            "Kuron".to_string()
+        } else {
+            name
+        };
         Self {
             message: format!("Halo, {name}! Kuron Desktop (Tauri v2) jalan."),
             name,

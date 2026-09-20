@@ -6,5 +6,7 @@ use crate::core::AppError;
 
 #[allow(dead_code)]
 pub fn chunk_webtoon(_bytes: &[u8], _max_chunk_h: u32) -> Result<Vec<Vec<u8>>, AppError> {
-    Err(AppError::Internal("Fase 3: image_ops belum di-port".to_string()))
+    Err(AppError::Internal(
+        "Fase 3: image_ops belum di-port".to_string(),
+    ))
 }
