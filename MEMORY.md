@@ -97,8 +97,13 @@ src/lib/
 
 ### Recent Sessions
 
-> Session log in this table. Last updated: 2026-09-19.
+> Session log in this table. Last updated: 2026-09-20.
 
+| 2026-09-20 | OpenCode | Tentang resize paksa | Done | Fokus popup lama cuma `setFocus` (ukuran lama kekunci) → tambah `setSize` di `openPopup` + branch menu Rust. Hijau semua. |
+| 2026-09-20 | OpenCode | Tentang width 560 | Done | Popup about 480×800 → 560×800 (`lib.rs` + `openAboutWindow`). Perlu restart `pnpm dev`. cargo check bersih. |
+| 2026-09-20 | OpenCode | Hapus tab sumber konten | Done | Tab Semua/NHentai/Hitomi/E-Hentai + CSS `.tabs` dihapus dari MainPage; sumber cukup dari sidebar (popup). `pnpm check` 0/0, build OK. Spec `app-shell` diselaraskan. |
+| 2026-09-20 | OpenCode | Apply grup 2+3 roadmap | Done | 2.1 tracing subscriber + test; 2.2 AppState `Arc<dyn ContentRepository>` + `cmd_home_feed(State)` + blanket Arc; 2.3 `.github/workflows/ci.yml` matrix 3 OS (YAML valid, hijau runner nunggu push); 3.1 roundtrip serde 4 test; 3.2 ts-rs 12 derive 15 tipe + `export_types_ts` tulis `types.ts` (`type`, bukan `interface`); 3.3 async-trait + command async. `cargo test` 11 pass, `cargo check` bersih, `pnpm check` 0/0, build OK. AGENTS domain rule → serde+ts-rs. tasks 14/35. |
+| 2026-09-20 | OpenCode | Openspec payung roadmap | Done | Change `kuron-desktop-roadmap`: proposal + 13 spec delta + design + tasks. `validate` valid, 4/4 artefak. Planning only, tanpa ubah kode. |
 | 2026-09-19 | OpenCode | Sidebar mini logo | Done | Collapsed 64px tambah logo maskot `logo_app.webp` 40px rounded+hairline di atas (`mini-logo` button, hover ring coral); klik → expand via `onToggle` baru (MainPage). HMR cukup. Hijau 0/0. |
 | 2026-09-19 | OpenCode | Sidebar Tentang → popup | Done | Item `Tentang` (MORE) tadinya dead-end → buka popup `about` 480×800 via `openAboutWindow()` baru; `openPopup()` helper generik dipakai source-picker + about; `activeNav` tidak berubah, error tampil di konten. HMR cukup. Hijau 0/0. |
 | 2026-09-19 | OpenCode | Tentang custom + menu macOS | Done | About panel native cuma nama+versi → window popup custom 460×640 (`AboutPage`, hash `#about`): logo, versi live `cmd_app_info`, deskripsi, stack chips, daftar sumber+versi, tombol repo (plugin-opener), footer. Menu `Tentang Kuron` custom via `WebviewWindowBuilder` (fokus bila ada). Cargo description/authors diperbaiki. Capability windows +`about`. cargo + svelte + build hijau. |

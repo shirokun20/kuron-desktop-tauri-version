@@ -54,6 +54,10 @@ async function openPopup(
       existing = null;
     }
     if (existing) {
+      // Paksa ukuran kini: window lama (dibuat sebelum resize) ikut update.
+      await existing
+        .setSize(new LogicalSize(width, height))
+        .catch(() => {});
       await existing.setFocus().catch(() => {});
       return null;
     }
@@ -99,5 +103,5 @@ export function openSourcePicker(): Promise<string | null> {
 
 /** Popup window native "Tentang Kuron". Fokuskan bila sudah ada. */
 export function openAboutWindow(): Promise<string | null> {
-  return openPopup("about", "#about", "Tentang Kuron", 480, 800);
+  return openPopup("about", "#about", "Tentang Kuron", 560, 800);
 }

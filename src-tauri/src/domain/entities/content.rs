@@ -1,8 +1,9 @@
 //! Content entity — port `entities/content.dart`.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct Content {
     pub id: String,
     pub title: String,

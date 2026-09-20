@@ -130,11 +130,15 @@ pub fn run() {
         .on_menu_event(|app, event| match event.id().as_ref() {
             "about-kuron" => {
                 if let Some(win) = app.get_webview_window("about") {
+                    let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                        width: 560.0,
+                        height: 800.0,
+                    }));
                     let _ = win.set_focus();
                 } else {
                     let _ = WebviewWindowBuilder::new(app, "about", WebviewUrl::App("/#about".into()))
                         .title("Tentang Kuron")
-                        .inner_size(480.0, 800.0)
+                        .inner_size(560.0, 800.0)
                         .center()
                         .resizable(false)
                         .build();

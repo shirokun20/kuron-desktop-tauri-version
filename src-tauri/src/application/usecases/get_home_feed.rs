@@ -1,5 +1,5 @@
 //! GetHomeFeedUseCase — feed halaman utama (splash -> main).
-//! Fase 0: repo mock. Fase 1: `ContentRepository::search` real.
+//! Fase 1: trait async. Fase 2: `ContentRepository::search` real.
 
 use crate::{
     core::AppError,
@@ -15,7 +15,22 @@ impl<R: HomeFeedRepository> GetHomeFeedUseCase<R> {
         Self { repo }
     }
 
-    pub fn execute(&self) -> Result<Vec<Content>, AppError> {
-        self.repo.home_feed()
+    pub async fn execute(&self) -> Result<Vec<Content>, AppError> {
+        self.repo.home_feed().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::MockContentRepository;
+
+    #[test]
+    fn serves_mock_feed_via_arc_dyn() {
+        let repo: std::sync::Arc<dyn HomeFeedRepository> =
+            std::sync::Arc::new(MockContentRepository);
+        let feed = tauri::async_runtime::block_on(GetHomeFeedUseCase::new(repo).execute())
+            .unwrap();
+        assert_eq!(feed.len(), 8);
     }
 }

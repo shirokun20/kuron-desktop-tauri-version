@@ -1,10 +1,10 @@
 <script lang="ts">
   // MainPage — wireframe gaming-store-catalog diterjemah ke Svelte:
-  // sidebar 256 + header 64 sticky + tabs 44 + konten max 1180.
+  // sidebar 256 + header 64 sticky + konten max 1180. Sumber via sidebar.
   // Styling 100% token Kuron (bukan warna wireframe).
   import { contentStore } from "../stores/content.svelte";
   import { helloStore } from "../stores/hello.svelte";
-  import { SOURCES, sourceStore } from "../stores/source.svelte";
+  import { sourceStore } from "../stores/source.svelte";
   import { openAboutWindow } from "../api/window";
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
@@ -102,19 +102,6 @@
         <ThemeToggle />
       </div>
     </header>
-
-    <div class="tabs" role="tablist" aria-label="Sumber">
-      {#each SOURCES as source}
-        <button
-          role="tab"
-          aria-selected={sourceStore.current === source}
-          class:active={sourceStore.current === source}
-          onclick={() => sourceStore.select(source)}
-        >
-          {source}
-        </button>
-      {/each}
-    </div>
 
     <main class="content">
       {#if navError}
@@ -214,38 +201,6 @@
     border-radius: var(--radius);
     border: 1px solid var(--input);
     background: var(--muted);
-  }
-  .tabs {
-    height: 44px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 24px;
-    background: var(--popover);
-    border-bottom: 1px solid var(--border);
-    overflow-x: auto;
-  }
-  .tabs button {
-    padding: 6px 14px;
-    border-radius: 999px;
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--muted-foreground);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .tabs button:hover {
-    color: var(--foreground);
-    background: var(--muted);
-  }
-  .tabs button.active {
-    color: var(--primary);
-    border-color: var(--primary);
-    background: color-mix(in srgb, var(--primary) 12%, transparent);
-    font-weight: 600;
   }
   .content {
     max-width: 1180px;

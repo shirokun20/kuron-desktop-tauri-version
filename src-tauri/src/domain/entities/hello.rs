@@ -1,8 +1,9 @@
 //! Hello entity: pure Domain, serde only for IPC transport.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct Hello {
     pub name: String,
     pub message: String,

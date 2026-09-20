@@ -1,9 +1,11 @@
-//! Domain: pure, zero deps (spec §8). No Tauri/sqlite/reqwest imports.
-//! Port `lib/domain/entities/*` (Freezed) -> Rust structs + serde.
+//! Domain: pure — hanya `serde` (transport) + `ts-rs` (generate TS, ADR-004).
+//! No Tauri/sqlite/reqwest imports. Port `lib/domain/entities/*` (Freezed).
 
 pub mod entities;
 pub mod repositories;
 pub mod services;
+#[cfg(test)]
+mod ts_export;
 pub mod value_objects;
 
 pub use entities::{
@@ -18,3 +20,98 @@ pub use entities::{
     search_filter::SearchFilter,
 };
 pub use value_objects::{language::Language, source_id::SourceId};
+
+#[cfg(test)]
+mod roundtrip_tests {
+    //! Roundtrip serde semua entity + value objects (3.1).
+    //! Bandingkan via `serde_json::Value` agar tak perlu `PartialEq`.
+
+    use serde::{de::DeserializeOwned, Serialize};
+
+    use super::*;
+
+    fn assert_roundtrip<T: Serialize + DeserializeOwned>(v: &T) {
+        let json = serde_json::to_value(v).unwrap();
+        let back: T = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&back).unwrap(), json);
+    }
+
+    #[test]
+    fn hello_content_chapter() {
+        assert_roundtrip(&Hello::new("Asix"));
+        for c in Content::mock_feed() {
+            assert_roundtrip(&c);
+        }
+        assert_roundtrip(&Chapter {
+            id: "c1".into(),
+            content_id: "m1".into(),
+            title: "Chapter 1".into(),
+            order: 1,
+            is_external: true,
+            external_url: Some("https://ex.example/1".into()),
+        });
+    }
+
+    #[test]
+    fn page_images_downloads() {
+        assert_roundtrip(&PageImageResult::Cached("/tmp/p1.jpg".into()));
+        assert_roundtrip(&PageImageResult::Remote("https://cdn.example/p1.jpg".into()));
+        for state in [
+            DownloadState::Queued,
+            DownloadState::Downloading { page: 3, total: 40 },
+            DownloadState::Paused,
+            DownloadState::Completed,
+            DownloadState::Failed("timeout".into()),
+        ] {
+            assert_roundtrip(&state);
+        }
+        assert_roundtrip(&DownloadTask {
+            chapter_id: "c1".into(),
+            content_id: "m1".into(),
+            state: DownloadState::Downloading { page: 3, total: 40 },
+        });
+    }
+
+    #[test]
+    fn ai_glossary_filter_reader() {
+        assert_roundtrip(&PageTranslation {
+            page_index: 0,
+            bubbles: vec![BubbleBox {
+                x: 1.0,
+                y: 2.0,
+                w: 3.0,
+                h: 4.0,
+                translated: Some("halo".into()),
+            }],
+        });
+        assert_roundtrip(&GlossaryEntry {
+            source: "senpai".into(),
+            target: "kakak kelas".into(),
+        });
+        assert_roundtrip(&SearchFilter::default());
+        assert_roundtrip(&SearchFilter {
+            query: "test".into(),
+            source_id: Some("nhentai".into()),
+            page: 2,
+        });
+        for mode in [
+            ReadingMode::Paginated,
+            ReadingMode::ContinuousScroll,
+            ReadingMode::Webtoon,
+        ] {
+            assert_roundtrip(&ReaderSettings {
+                mode,
+                right_to_left: true,
+            });
+        }
+    }
+
+    #[test]
+    fn value_objects() {
+        assert_roundtrip(&SourceId("nhentai".into()));
+        assert_roundtrip(&Language::En);
+        assert_roundtrip(&Language::Id);
+        assert_roundtrip(&Language::Zh);
+        assert_roundtrip(&Language::Other("ms".into()));
+    }
+}

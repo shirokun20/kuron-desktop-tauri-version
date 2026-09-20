@@ -2,8 +2,9 @@
 //! `isExternal/isReadableInApp` logic pindah Rust (Fase 1).
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct Chapter {
     pub id: String,
     pub content_id: String,

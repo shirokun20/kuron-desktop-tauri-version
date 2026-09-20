@@ -18,7 +18,7 @@ pub fn cmd_app_info() -> AppInfo {
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ts_rs::TS)]
 pub struct AppInfo {
     pub name: String,
     pub version: String,

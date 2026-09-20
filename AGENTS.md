@@ -30,7 +30,7 @@ Presentation (Svelte) -> Application (Rust) -> Domain <- Data (Rust)
 ```
 
 - UI tidak import Data. UI -> `invoke('cmd_*')` -> UseCase -> Repo trait -> DataSource.
-- Domain pure: **zero deps** selain `serde`. No Tauri/SQLite/reqwest.
+- Domain pure: **serde + ts-rs** (ADR-004 generate). No Tauri/SQLite/reqwest.
 - Satu use case = satu file, satu method `execute`.
 - Commands thin: no logic, map `AppError -> String` di boundary.
 - `pnpm check` + `cargo test` hijau sebelum lapor selesai.
