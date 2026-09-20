@@ -24,12 +24,31 @@
     active: string;
     collapsed: boolean;
     source: string;
+    /** Ikon sumber aktif (URL config `ui.iconPath` / manifest) — opsional. */
+    sourceIcon?: string | null;
     version: string;
     onSelect: (id: string) => void;
     onToggle: () => void;
   }
 
-  let { groups, active, collapsed, source, version, onSelect, onToggle }: Props = $props();
+  let {
+    groups,
+    active,
+    collapsed,
+    source,
+    sourceIcon = null,
+    version,
+    onSelect,
+    onToggle,
+  }: Props = $props();
+
+  // Ikon sumber gagal dimuat (offline/CORS) → kembali ke tile inisial.
+  let sourceIconFailed = $state(false);
+  // Sumber berganti → coba ikon baru dari nol.
+  $effect(() => {
+    void sourceIcon;
+    sourceIconFailed = false;
+  });
 
   // Satu pintu tap: store yang memutuskan popup window native atau overlay.
   async function openPicker() {
@@ -53,7 +72,18 @@
     </div>
 
     <button class="source" onclick={openPicker} title="Ganti sumber">
-      <span class="tile s">{source.slice(0, 1).toUpperCase()}</span>
+      <span class="tile s">
+        {#if sourceIcon && !sourceIconFailed}
+          <img
+            src={sourceIcon}
+            alt=""
+            referrerpolicy="no-referrer"
+            onerror={() => (sourceIconFailed = true)}
+          />
+        {:else}
+          {source.slice(0, 1).toUpperCase()}
+        {/if}
+      </span>
       <span class="source-name">{source}</span>
       <span class="chev">{@html CHEV_EXPAND}</span>
     </button>
@@ -242,6 +272,12 @@
     border-radius: 8px;
     background: var(--muted);
     font-weight: 700;
+    overflow: hidden;
+  }
+  .tile img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
   .tile :global(svg) {
     width: 18px;

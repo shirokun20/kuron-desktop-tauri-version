@@ -469,6 +469,30 @@ impl SourceConfigs {
 mod tests {
     use super::*;
 
+    /// Config dengan blok `ui` berisi field yang tak dikenal (`brandColor`)
+    /// HARUS tetap ter-parse — field `ui` memang bervariasi antar versi
+    /// (kasus nyata: ehentai-config.json ter-install di data dir user).
+    #[test]
+    fn ui_block_with_unknown_fields_still_parses() {
+        let file: SourceFile = serde_json::from_str(
+            r##"{"source":"ehentai","version":"1.0","baseUrl":"https://e-hentai.org",
+                "ui":{"displayName":"E-Hentai","iconPath":"icon.png","brandColor":"#337ab7"}}"##,
+        )
+        .expect("blok ui longgar: field tak dikenal tak boleh gagalkan parse");
+        assert_eq!(file.ui_icon_path(), Some("icon.png".into()));
+        assert_eq!(file.ui_display_name(), Some("E-Hentai".into()));
+    }
+
+    /// `ui` kosong/absen → helper ikon & nama mengembalikan None.
+    #[test]
+    fn ui_block_helpers_return_none_when_missing() {
+        let file: SourceFile =
+            serde_json::from_str(r#"{"source":"x","version":"1.0","baseUrl":"https://x.example"}"#)
+                .unwrap();
+        assert!(file.ui_icon_path().is_none());
+        assert!(file.ui_display_name().is_none());
+    }
+
     /// Config fixture di dir temp (config-driven: hanya `nhentai` yang
     /// dibundel; sumber lain datang dari Ekstensi).
     fn write_fixture(tag: &str, files: &[(&str, &str)]) -> PathBuf {

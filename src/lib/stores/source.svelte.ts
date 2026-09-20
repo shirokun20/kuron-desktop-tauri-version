@@ -45,6 +45,13 @@ class SourceStore {
     );
   }
 
+  /** Ikon sumber aktif (URL manifest / config `ui.iconPath`) untuk Sidebar. */
+  get currentIconUrl(): string | null {
+    return (
+      this.available.find((s) => s.id === this.current)?.iconUrl ?? null
+    );
+  }
+
   /** Muat daftar dari backend; fallback daftar lokal bila gagal. */
   async load() {
     this.loading = true;
@@ -55,7 +62,8 @@ class SourceStore {
         { id: "semua", label: "Semua", version: "mock" },
         ...list.map((s) => ({
           id: s.id,
-          label: prettyLabel(s.id),
+          // `ui.displayName` dari config sumber (backend); fallback label cantik.
+          label: s.display_name?.trim() || prettyLabel(s.id),
           version: s.version ? `v${s.version}` : "",
           iconUrl: s.icon_url,
         })),

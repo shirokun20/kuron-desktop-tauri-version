@@ -130,6 +130,7 @@
       active={activeNav}
       collapsed={platformStore.narrow ? false : collapsed}
       source={sourceStore.currentLabel}
+      sourceIcon={sourceStore.currentIconUrl}
       {version}
       onSelect={selectNav}
       onToggle={toggleSidebar}
