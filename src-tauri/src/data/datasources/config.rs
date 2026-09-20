@@ -22,6 +22,12 @@ pub struct ApiSection {
     /// String (`"/x/{id}"`) atau map (`{"path": "/x", "params": {...}}`).
     #[serde(default)]
     pub endpoints: HashMap<String, serde_json::Value>,
+    /// Blok bersarang ala MangaDex (`api.detail.chapters.endpoint`,
+    /// `api.images.atHomeEndpoint`) — Value, dinavigasi per perlu.
+    #[serde(default)]
+    pub detail: serde_json::Value,
+    #[serde(default)]
+    pub images: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -121,6 +127,9 @@ pub struct ListCfg {
     pub container: String,
     #[serde(default)]
     pub fields: HashMap<String, FieldSel>,
+    /// Blok `pagination` (`{"next": "#unext", "links": ...}`) — token cursor mobile.
+    #[serde(default)]
+    pub pagination: HashMap<String, String>,
 }
 
 /// Satu pola URL: string polos (`"detail": "/series/{id}/"`) atau map

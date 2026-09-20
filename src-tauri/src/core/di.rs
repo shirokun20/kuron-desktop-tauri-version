@@ -10,7 +10,7 @@ use crate::{
             config::SourceConfigs,
             remote::{
                 ehentai_config, hitomi_config, FieldMap, GenericRestAdapter,
-                GenericScraperAdapter, NhentaiApiAdapter, SourceConfig,
+                GenericScraperAdapter, NhentaiApiAdapter, PaginationCursors, SourceConfig,
             },
         },
         repositories::{ContentRepositoryImpl, MockContentRepository},
@@ -27,6 +27,8 @@ pub struct AppState {
     pub http: HttpClientManager,
     /// Dir config ekstensi ter-install (`{data}/extensions`).
     pub ext_dir: PathBuf,
+    /// Cursor pagination token per sumber (E-Hentai `?next=`, ala mobile).
+    pub cursors: PaginationCursors,
 }
 
 fn default_ext_dir() -> PathBuf {
@@ -46,6 +48,7 @@ impl AppState {
             content_repo,
             http: HttpClientManager::new().expect("tls backend init"),
             ext_dir,
+            cursors: PaginationCursors::default(),
         }
     }
 
@@ -59,6 +62,7 @@ impl AppState {
                 list_path: String::new(),
                 home_path: String::new(),
                 home_page_path: String::new(),
+                pagination_next: String::new(),
                 detail_path: String::new(),
                 item_selector: String::new(),
                 id: FieldMap::default(),
@@ -67,6 +71,8 @@ impl AppState {
                 cover: FieldMap::default(),
                 detail_title: FieldMap::default(),
                 detail_cover: FieldMap::default(),
+                detail_page_count: FieldMap::default(),
+                detail_language: FieldMap::default(),
                 chapter_selector: String::new(),
                 chapter_link: FieldMap::default(),
                 chapter_title: FieldMap::default(),
@@ -104,6 +110,7 @@ impl AppState {
                 list_path: String::new(),
                 home_path: String::new(),
                 home_page_path: String::new(),
+                pagination_next: String::new(),
                 detail_path: String::new(),
                 item_selector: String::new(),
                 id: FieldMap::default(),
@@ -112,6 +119,8 @@ impl AppState {
                 cover: FieldMap::default(),
                 detail_title: FieldMap::default(),
                 detail_cover: FieldMap::default(),
+                detail_page_count: FieldMap::default(),
+                detail_language: FieldMap::default(),
                 chapter_selector: String::new(),
                 chapter_link: FieldMap::default(),
                 chapter_title: FieldMap::default(),
@@ -122,14 +131,52 @@ impl AppState {
                 default_language: None,
             });
             return Ok(Arc::new(
-                ContentRepositoryImpl::new(scraper, rest, scfg).with_nhentai(api),
+                ContentRepositoryImpl::new(scraper, rest, scfg)
+                    .with_nhentai(api)
+                    .with_pagination(self.cursors.clone()),
             ));
         }
-        match Self::scraper_config_for(source_id) {
-            Some(scfg) => Ok(Arc::new(ContentRepositoryImpl::new(scraper, rest, scfg))),
-            None => {
-                // JSON config ter-install (areakomik dkk) → engine generik.
-                // Hardcode hanya fallback bila JSON tak punya pola list.
+        match source_id {
+            // JSON installed menang; hardcode hanya fallback bila JSON tak
+            // punya pola list (dulu terbalik: hardcode selalu menang).
+            _ if source_id == "mangadex" => {
+                let rest = match overlay.get(source_id) {
+                    Some(file) => GenericRestAdapter::new(http.clone())
+                        .with_source_file(file.clone()),
+                    None => GenericRestAdapter::new(http.clone()),
+                };
+                let scfg = Self::scraper_config_for("mangadex").unwrap_or(SourceConfig {
+                    source_id: "mangadex".to_string(),
+                    base_url: "https://api.mangadex.org".to_string(),
+                    list_path: String::new(),
+                    home_path: String::new(),
+                    home_page_path: String::new(),
+                pagination_next: String::new(),
+                    detail_path: String::new(),
+                    item_selector: String::new(),
+                    id: FieldMap::default(),
+                    title: FieldMap::default(),
+                    link: FieldMap::default(),
+                    cover: FieldMap::default(),
+                    detail_title: FieldMap::default(),
+                    detail_cover: FieldMap::default(),
+                    detail_page_count: FieldMap::default(),
+                    detail_language: FieldMap::default(),
+                    chapter_selector: String::new(),
+                    chapter_link: FieldMap::default(),
+                    chapter_title: FieldMap::default(),
+                    page_selector: String::new(),
+                    page_attr: None,
+                    page_count: FieldMap::default(),
+                    language: FieldMap::default(),
+                    default_language: None,
+                });
+                Ok(Arc::new(
+                    ContentRepositoryImpl::new(scraper, rest, scfg).with_pagination(self.cursors.clone()),
+                ))
+            }
+            _ => {
+                // JSON config ter-install (ehentai/hitomi/areakomik dkk) → engine generik.
                 if let Some(file) = overlay.get(source_id) {
                     if let Some(scraper_sec) = file.scraper.as_ref() {
                         if let Some(scfg) = crate::data::datasources::remote::source_config_from_json(
@@ -138,13 +185,22 @@ impl AppState {
                             scraper_sec,
                             &file.default_language,
                         ) {
-                            return Ok(Arc::new(ContentRepositoryImpl::new(scraper, rest, scfg)));
+                            return Ok(Arc::new(
+                                ContentRepositoryImpl::new(scraper, rest, scfg)
+                                    .with_pagination(self.cursors.clone()),
+                            ));
                         }
                     }
                 }
-                Err(AppError::Validation(format!(
-                    "sumber '{source_id}' ter-install tapi pola scraper-nya tak didukung engine"
-                )))
+                // Hardcode hanya fallback bila JSON tak punya pola list.
+                match Self::scraper_config_for(source_id) {
+                    Some(scfg) => Ok(Arc::new(
+                        ContentRepositoryImpl::new(scraper, rest, scfg).with_pagination(self.cursors.clone()),
+                    )),
+                    None => Err(AppError::Validation(format!(
+                        "sumber '{source_id}' ter-install tapi pola scraper-nya tak didukung engine"
+                    ))),
+                }
             }
         }
     }

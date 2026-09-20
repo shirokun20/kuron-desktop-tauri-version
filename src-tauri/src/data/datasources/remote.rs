@@ -9,7 +9,10 @@ use scraper::{Html, Selector};
 
 use crate::{
     core::AppError,
-    data::models::ContentModel,
+    data::{
+        datasources::config::{fill_url, SourceFile},
+        models::ContentModel,
+    },
     domain::Chapter,
     network::HttpClientManager,
 };
@@ -55,6 +58,9 @@ pub struct SourceConfig {
     pub home_path: String,
     /// Path home halaman >1 (pola `homePage`); kosong = ulang home.
     pub home_page_path: String,
+    /// Selector link halaman berikut (mis. `#unext`); token `?next=` mobile.
+    /// Kosong = tanpa cursor (template `{page}` saja).
+    pub pagination_next: String,
     /// Path detail; `{id}` = id konten. Bila id sudah URL penuh, dipakai langsung.
     pub detail_path: String,
     pub item_selector: String,
@@ -65,6 +71,9 @@ pub struct SourceConfig {
     /// Selector halaman detail (fallback ke list bila kosong).
     pub detail_title: FieldMap,
     pub detail_cover: FieldMap,
+    /// Field detail config-driven (kosong = tak dipakai).
+    pub detail_page_count: FieldMap,
+    pub detail_language: FieldMap,
     /// Field opsional list ala mapper mobile (kosong = tak dipakai).
     pub page_count: FieldMap,
     pub language: FieldMap,
@@ -146,6 +155,52 @@ fn is_placeholder_src(v: &str) -> bool {
     false
 }
 
+/// Cover dari `style="...url(...)..."` (mobile `_extractCoverFromRow`:
+/// e-hentai menaruh thumbnail di `.glthumb div`, bukan `<img>`).
+fn style_cover_url(item: scraper::ElementRef<'_>) -> String {
+    let Ok(sel) = Selector::parse("[style]") else {
+        return String::new();
+    };
+    for el in item.select(&sel) {
+        let style = el.value().attr("style").unwrap_or("");
+        if let Some(u) = extract_style_url(style) {
+            if !u.is_empty() && !u.starts_with("data:") {
+                return u;
+            }
+        }
+    }
+    String::new()
+}
+
+fn extract_style_url(style: &str) -> Option<String> {
+    let pos = style.to_lowercase().find("url(")?;
+    let rest = style[pos + 4..].trim_start_matches(['"', '\'', ' ']);
+    let end = rest.find(['"', '\'', ')']).unwrap_or(rest.len());
+    Some(rest[..end].trim().replace("&amp;", "&"))
+}
+
+/// Bahasa dari tag baris `.gt[title="language:x"]`
+/// (mobile `_extractLanguageFromRow`).
+fn row_language(item: scraper::ElementRef<'_>) -> Option<String> {
+    let Ok(sel) = Selector::parse(".gt[title]") else {
+        return None;
+    };
+    for el in item.select(&sel) {
+        let t = el.value().attr("title").unwrap_or("");
+        if let Some((k, v)) = t.split_once(':') {
+            if k.trim().eq_ignore_ascii_case("language") {
+                let name = v.trim();
+                if !name.is_empty() {
+                    return Some(
+                        normalize_lang(name).unwrap_or_else(|| name.to_string()),
+                    );
+                }
+            }
+        }
+    }
+    None
+}
+
 fn apply_map(mut value: String, map: &FieldMap) -> String {
     if let Some(re) = map.regex.as_deref() {
         // dotAll ala mobile: teks badge acap multiline.
@@ -208,7 +263,12 @@ impl SourceConfig {
                 &[("page", &page.to_string())],
             )
         } else if !self.home_path.trim().is_empty() {
-            self.home_path.clone()
+            // Pola `home` acap bawa `{page}` sendiri (ehentai `/?page={page}`):
+            // isi bila ada, bukan URL mentah yang mengulang halaman 1.
+            crate::data::datasources::config::fill_url(
+                &self.home_path,
+                &[("page", &page.to_string())],
+            )
         } else {
             return self.list_url("", 1);
         };
@@ -230,19 +290,102 @@ impl SourceConfig {
     }
 
     fn absolutize(&self, src: &str) -> String {
-        if src.is_empty() {
-            return String::new();
-        }
-        if src.starts_with("http://") || src.starts_with("https://") {
-            src.to_string()
-        } else if let Some(rest) = src.strip_prefix("//") {
-            format!("https://{rest}")
-        } else if src.starts_with('/') {
-            format!("{}{src}", self.base_url)
-        } else {
-            format!("{}/{}", self.base_url, src)
+        absolutize_url(&self.base_url, src)
+    }
+}
+
+/// Absolutkan src relatif ala mobile (`_toAbsoluteUrl`).
+fn absolutize_url(base: &str, src: &str) -> String {
+    if src.is_empty() {
+        return String::new();
+    }
+    if src.starts_with("http://") || src.starts_with("https://") {
+        src.to_string()
+    } else if let Some(rest) = src.strip_prefix("//") {
+        format!("https://{rest}")
+    } else if src.starts_with('/') {
+        format!("{base}{src}")
+    } else {
+        format!("{base}/{src}")
+    }
+}
+
+/// Cache cursor pagination token ala mobile (`_paginationCursorCache` +
+/// `_pageUrlCache`): halaman N+1 diambil dari link `next` halaman N,
+/// bukan template `?page=` (E-Hentai mengabaikan `?page=` — isi hal 1 lagi).
+#[derive(Debug, Clone, Default)]
+pub struct PaginationCursors {
+    inner: std::sync::Arc<std::sync::Mutex<HashMap<String, CursorState>>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum CursorState {
+    Next(String),
+    Exhausted,
+}
+
+impl PaginationCursors {
+    /// Kunci cursor: `home:{source}:{page}` / `search:{source}:{query}:{page}`.
+    pub fn home_key(source: &str, page: u32) -> String {
+        format!("home:{source}:{page}")
+    }
+
+    pub fn search_key(source: &str, query: &str, page: u32) -> String {
+        format!("search:{source}:{}:{page}", query.trim())
+    }
+
+    pub fn get(&self, key: &str) -> Option<CursorState> {
+        self.inner.lock().ok()?.get(key).cloned()
+    }
+
+    pub fn put_next(&self, next_page_key: &str, url: String) {
+        if let Ok(mut m) = self.inner.lock() {
+            m.insert(next_page_key.to_string(), CursorState::Next(url));
         }
     }
+
+    pub fn mark_exhausted(&self, next_page_key: &str) {
+        if let Ok(mut m) = self.inner.lock() {
+            m.insert(next_page_key.to_string(), CursorState::Exhausted);
+        }
+    }
+}
+
+/// Link halaman berikut ala mobile (`_extractSearchNavUrl`): selector config
+/// (`#unext`), cadangan `#dnext` / `.searchnav a[href*=next=]`, lalu
+/// `var nexturl="..."` di script.
+fn extract_next_url(html: &str, base_url: &str, selector: &str) -> Option<String> {
+    let doc = Html::parse_document(html);
+    let mut selectors: Vec<&str> = Vec::new();
+    if !selector.trim().is_empty() {
+        selectors.push(selector.trim());
+    }
+    selectors.extend(["#dnext", ".searchnav a[href*=\"next=\"]"]);
+    for sel_str in selectors {
+        if let Ok(sel) = Selector::parse(sel_str) {
+            if let Some(el) = doc.select(&sel).next() {
+                let href = el.value().attr("href").unwrap_or("").trim().replace("&amp;", "&");
+                if !href.is_empty() {
+                    return Some(absolutize_url(base_url, &href));
+                }
+            }
+        }
+    }
+    // Fallback script: `var nexturl="..."`.
+    let lower = html.to_lowercase();
+    if let Some(pos) = lower.find("var nexturl") {
+        let rest = &html[pos..];
+        if let Some(q1) = rest.find('"') {
+            let after = &rest[q1 + 1..];
+            if let Some(q2) = after.find('"') {
+                let url = after[..q2].trim().replace("&amp;", "&").replace(r"\/", "/");
+                if !url.is_empty() {
+                    return Some(absolutize_url(base_url, &url));
+                }
+            }
+        }
+    }
+    None
 }
 
 /// NHentai — config best-known (`.gallery` stabil bertahun-tahun).
@@ -254,6 +397,7 @@ pub fn nhentai_config() -> SourceConfig {
         list_path: "/search/?q={q}&page={page}".to_string(),
         home_path: String::new(),
         home_page_path: String::new(),
+        pagination_next: String::new(),
         detail_path: "/g/{id}/".to_string(),
         item_selector: ".gallery".to_string(),
         id: FieldMap {
@@ -267,6 +411,8 @@ pub fn nhentai_config() -> SourceConfig {
         cover: FieldMap::attr("img", "src"),
         detail_title: FieldMap::default(),
         detail_cover: FieldMap::default(),
+        detail_page_count: FieldMap::default(),
+        detail_language: FieldMap::default(),
         chapter_selector: "a.go".to_string(),
         chapter_link: FieldMap::attr("a.go", "href"),
         chapter_title: FieldMap::text("a.go"),
@@ -286,6 +432,7 @@ pub fn hitomi_config() -> SourceConfig {
         list_path: "/search.html?q={q}".to_string(),
         home_path: "/index-all.html".to_string(),
         home_page_path: String::new(),
+        pagination_next: String::new(),
         detail_path: "/galleries/{id}.html".to_string(),
         item_selector: ".gallery-content > div".to_string(),
         id: FieldMap {
@@ -299,6 +446,8 @@ pub fn hitomi_config() -> SourceConfig {
         cover: FieldMap::attr(".dj-img img, img", "src"),
         detail_title: FieldMap::default(),
         detail_cover: FieldMap::default(),
+        detail_page_count: FieldMap::default(),
+        detail_language: FieldMap::default(),
         chapter_selector: ".manga-chapter a".to_string(),
         chapter_link: FieldMap::attr(".manga-chapter a", "href"),
         chapter_title: FieldMap::text(".manga-chapter a"),
@@ -310,31 +459,45 @@ pub fn hitomi_config() -> SourceConfig {
     }
 }
 
-/// E-Hentai — butuh cookie/login untuk penuh; selector publik best-known.
+/// E-Hentai — salinan nilai `informations/configs/ehentai-config.json` mobile.
+/// Fallback bila JSON installed tak terbaca; `repo_for` utamakan JSON.
 pub fn ehentai_config() -> SourceConfig {
     SourceConfig {
         source_id: "ehentai".to_string(),
         base_url: "https://e-hentai.org".to_string(),
-        list_path: "/?f_search={q}&page={page}".to_string(),
-        home_path: "/".to_string(),
+        list_path: "/?f_search={query}&page={page}".to_string(),
+        home_path: "/?page={page}".to_string(),
         home_page_path: String::new(),
-        // E-H URL butuh token (`/g/{id}/{token}/`); frontend kirim URL penuh bila ada.
+        pagination_next: "#unext".to_string(),
+        // ID = regex config: `/g/([0-9]+/[a-zA-Z0-9]+)/`.
         detail_path: "/g/{id}/".to_string(),
-        item_selector: "table.gltc tr, .itg tr".to_string(),
-        id: FieldMap::attr(".gl3c a, .gl4e a", "href"),
-        title: FieldMap::text(".glink, .gl4e a"),
-        link: FieldMap::attr(".gl3c a, .gl4e a", "href"),
-        cover: FieldMap::attr(".gl3c img, .glthumb img", "src"),
-        detail_title: FieldMap::default(),
-        detail_cover: FieldMap::default(),
-        chapter_selector: "#gdt a".to_string(),
-        chapter_link: FieldMap::attr("#gdt a", "href"),
-        chapter_title: FieldMap::text("#gdt a"),
-        page_selector: "#gdt img, #img".to_string(),
+        item_selector: ".itg.gltc tr".to_string(),
+        id: FieldMap {
+            selector: ".gl3c.glname a".to_string(),
+            attribute: Some("href".to_string()),
+            regex: Some("/g/([0-9]+/[a-zA-Z0-9]+)/".to_string()),
+            ..Default::default()
+        },
+        title: FieldMap::text(".glink"),
+        link: FieldMap::attr(".gl3c.glname a", "href"),
+        cover: FieldMap::attr(".gl2c img", "src"),
+        detail_title: FieldMap::text("#gn"),
+        detail_cover: FieldMap::attr("#gd1 img", "src"),
+        detail_page_count: FieldMap {
+            selector: "#gdd tr:nth-child(6) td.gdt2".to_string(),
+            regex: Some("([0-9]+)".to_string()),
+            ..Default::default()
+        },
+        detail_language: FieldMap::default(),
+        // Single-gallery (mobile bangun Part chapters dari paginasi ?p=).
+        chapter_selector: String::new(),
+        chapter_link: FieldMap::default(),
+        chapter_title: FieldMap::default(),
+        page_selector: "#img".to_string(),
         page_attr: Some("src".to_string()),
         page_count: FieldMap::default(),
         language: FieldMap::default(),
-        default_language: None,
+        default_language: Some("unknown".to_string()),
     }
 }
 
@@ -476,6 +639,24 @@ pub fn source_config_from_json(
     } else {
         detail_cover
     };
+    let detail_page_count = dfield(&["pageCount"]);
+    let detail_page_count = if detail_page_count.selector.is_empty() {
+        FieldMap::default()
+    } else {
+        detail_page_count
+    };
+    let detail_language = dfield(&["language"]);
+    let detail_language = if detail_language.selector.is_empty() {
+        FieldMap::default()
+    } else {
+        detail_language
+    };
+    // Cursor token mobile (`list.pagination.next`, mis. `#unext`).
+    let pagination_next = list
+        .pagination
+        .get("next")
+        .cloned()
+        .unwrap_or_default();
     Some(SourceConfig {
         source_id: source_id.to_string(),
         base_url: base_url.to_string(),
@@ -490,8 +671,11 @@ pub fn source_config_from_json(
         cover: to_map(cover),
         detail_title,
         detail_cover,
+        detail_page_count,
+        detail_language,
         page_count,
         language,
+        pagination_next,
         chapter_selector,
         chapter_link,
         chapter_title,
@@ -596,34 +780,93 @@ fn nhentai_lang_of_tags(v: &serde_json::Value) -> Option<String> {
 
 /// MangaDex memakai JSON API (REST), bukan scraping HTML.
 pub const MANGADEX_API: &str = "https://api.mangadex.org";
+/// Cover builder config: `https://mangadex.org/covers/{mangaId}/{fileName}.512.jpg`.
+const MANGADEX_COVER_TPL: &str = "https://mangadex.org/covers/{id}/{file}.512.jpg";
+const MANGADEX_PAGE_SIZE: u32 = 100;
+const MANGADEX_MAX_OFFSET: u32 = 9900;
+const MANGADEX_ALL: &str = "/manga?limit=100&offset={offset}&includes[]=cover_art&includes[]=author&includes[]=artist&contentRating[]=erotica&contentRating[]=pornographic&contentRating[]=suggestive&contentRating[]=safe&hasAvailableChapters=true&order[latestUploadedChapter]=desc";
+const MANGADEX_SEARCH: &str = "/manga?title={query}&limit=100&offset={offset}&includes[]=cover_art&includes[]=author&includes[]=artist&contentRating[]=erotica&contentRating[]=pornographic&contentRating[]=suggestive&contentRating[]=safe&hasAvailableChapters=true";
+const MANGADEX_DETAIL: &str = "/manga/{id}?includes[]=cover_art&includes[]=author&includes[]=artist";
+const MANGADEX_CHAPTERS: &str = "/chapter?manga={id}&translatedLanguage[]={language}&limit=100&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic";
+const MANGADEX_AT_HOME: &str = "/at-home/server/{chapterId}";
+
+/// Bahasa detail dari `<div id="td_language:x">` (mobile `_extractTags`).
+fn detail_language_tag(doc: &Html) -> Option<String> {
+    let Ok(sel) = Selector::parse("[id^=\"td_language\"]") else {
+        return None;
+    };
+    for el in doc.select(&sel) {
+        let id = el.value().attr("id").unwrap_or("");
+        let name = id.split_once(':').map(|(_, v)| v.trim()).filter(|v| !v.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                let t = collapse_ws(&el.text().collect::<String>());
+                (!t.is_empty()).then_some(t)
+            });
+        if let Some(name) = name {
+            if name.eq_ignore_ascii_case("translated") {
+                continue;
+            }
+            return Some(normalize_lang(&name).unwrap_or(name));
+        }
+    }
+    None
+}
 
 pub struct GenericRestAdapter {
     http: HttpClientManager,
+    /// JSON `mangadex-config.json` installed; endpoint dibaca dari sini.
+    source_file: Option<SourceFile>,
 }
 
 impl GenericRestAdapter {
     pub fn new(http: HttpClientManager) -> Self {
-        Self { http }
+        Self { http, source_file: None }
     }
 
-    /// Cari manga via MangaDex API; cover dari relasi `cover_art`.
+    pub fn with_source_file(mut self, file: SourceFile) -> Self {
+        self.source_file = Some(file);
+        self
+    }
+
+    fn md_base(&self) -> String {
+        self.source_file
+            .as_ref()
+            .map(|f| f.base_url.clone())
+            .filter(|b| !b.is_empty())
+            .unwrap_or_else(|| MANGADEX_API.to_string())
+    }
+
+    /// Endpoint `api.endpoints[name]` dari JSON, fallback template bawaan
+    /// (salinan nilai `mangadex-config.json` mobile).
+    fn md_endpoint(&self, name: &str, params: &[(&str, &str)], fallback: &str) -> String {
+        if let Some(url) = self.source_file.as_ref().and_then(|f| f.endpoint(name, params)) {
+            return url;
+        }
+        let path = fill_url(fallback, params);
+        format!("{}{}", self.md_base(), path)
+    }
+
+    /// Cari manga; query kosong → endpoint `allGalleries` (mobile `_searchNewSchema`).
     pub async fn search_mangadex(
         &self,
         query: &str,
         page: u32,
     ) -> Result<Vec<ContentModel>, AppError> {
-        let offset = page.saturating_sub(1) * 20;
-        let url = format!(
-            "{MANGADEX_API}/manga?title={query}&limit=20&offset={offset}\
-             &includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive"
-        );
+        let page = page.max(1);
+        let offset = ((page.saturating_sub(1) * MANGADEX_PAGE_SIZE).min(MANGADEX_MAX_OFFSET)).to_string();
+        let url = if query.trim().is_empty() {
+            self.md_endpoint("allGalleries", &[("offset", &offset)], MANGADEX_ALL)
+        } else {
+            self.md_endpoint("search", &[("query", query), ("offset", &offset)], MANGADEX_SEARCH)
+        };
         let body = self.http.get(&url, "mangadex").await?;
         Self::parse_mangadex(&body)
     }
 
     /// Detail satu manga via API (`/manga/{id}`).
     pub async fn get_mangadex_detail(&self, id: &str) -> Result<ContentModel, AppError> {
-        let url = format!("{MANGADEX_API}/manga/{id}?includes[]=cover_art");
+        let url = self.md_endpoint("detail", &[("id", id)], MANGADEX_DETAIL);
         let body = self.http.get(&url, "mangadex").await?;
         let v: serde_json::Value = serde_json::from_str(&body)
             .map_err(|e| AppError::Network(format!("mangadex json: {e}")))?;
@@ -639,6 +882,153 @@ impl GenericRestAdapter {
         })
     }
 
+    /// Chapter feed (`api.detail.chapters`, mobile `fetchChapters`):
+    /// coba `en` dulu, fallback tanpa filter bahasa.
+    pub async fn chapters_mangadex(&self, manga_id: &str) -> Result<Vec<Chapter>, AppError> {
+        let template: String = self
+            .source_file
+            .as_ref()
+            .and_then(|f| f.api.as_ref())
+            .and_then(|a| a.detail.get("chapters"))
+            .and_then(|c| c.get("endpoint"))
+            .and_then(|e| e.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| MANGADEX_CHAPTERS.to_string());
+        for lang in [Some("en"), None] {
+            let filled = fill_url(&template, &[("id", manga_id), ("language", lang.unwrap_or(""))]);
+            // `{language}` kosong tak ter-strip otomatis (nama param beda) →
+            // buang manual, HANYA saat tanpa filter bahasa.
+            let cleaned = if lang.is_none() {
+                filled
+                    .replace("&translatedLanguage[]=", "&")
+                    .replace("?translatedLanguage[]=&", "?")
+                    .replace("?translatedLanguage[]=", "?")
+            } else {
+                filled
+            };
+            let url = format!("{}{}", self.md_base(), cleaned);
+            let body = self.http.get(&url, "mangadex").await?;
+            let items = Self::parse_mangadex_chapters(&body, manga_id)?;
+            if !items.is_empty() || lang.is_none() {
+                return Ok(items);
+            }
+        }
+        Ok(vec![])
+    }
+
+    /// Gambar halaman via at-home (`api.images.atHomeEndpoint`, 1 request).
+    pub async fn pages_mangadex_at_home(&self, chapter_id: &str) -> Result<Vec<String>, AppError> {
+        let template: String = self
+            .source_file
+            .as_ref()
+            .and_then(|f| f.api.as_ref())
+            .and_then(|a| a.images.get("atHomeEndpoint"))
+            .and_then(|e| e.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| MANGADEX_AT_HOME.to_string());
+        let url = format!("{}{}", self.md_base(), fill_url(&template, &[("chapterId", chapter_id), ("id", chapter_id)]));
+        let body = self.http.get(&url, "mangadex").await?;
+        let v: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|e| AppError::Network(format!("mangadex at-home json: {e}")))?;
+        let base = v.get("baseUrl").and_then(|b| b.as_str()).unwrap_or("");
+        let node = v.get("chapter");
+        let hash = node.and_then(|c| c.get("hash")).and_then(|h| h.as_str()).unwrap_or("");
+        let files = node
+            .and_then(|c| c.get("data"))
+            .and_then(|d| d.as_array())
+            .filter(|a| !a.is_empty())
+            .map(|a| (a, "data"))
+            .or_else(|| {
+                node.and_then(|c| c.get("dataSaver"))
+                    .and_then(|d| d.as_array())
+                    .map(|a| (a, "data-saver"))
+            });
+        let Some((arr, seg)) = files else {
+            return Err(AppError::Network("mangadex at-home: payload kosong".to_string()));
+        };
+        if base.is_empty() || hash.is_empty() {
+            return Err(AppError::Network("mangadex at-home: base/hash hilang".to_string()));
+        }
+        Ok(arr
+            .iter()
+            .filter_map(|f| f.as_str())
+            .filter(|f| !f.is_empty())
+            .map(|f| format!("{base}/{seg}/{hash}/{f}"))
+            .collect())
+    }
+
+    fn parse_mangadex_chapters(body: &str, manga_id: &str) -> Result<Vec<Chapter>, AppError> {
+        let v: serde_json::Value = serde_json::from_str(body)
+            .map_err(|e| AppError::Network(format!("mangadex chapters json: {e}")))?;
+        let empty = vec![];
+        let data = v.get("data").and_then(|d| d.as_array()).unwrap_or(&empty);
+        Ok(data
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| {
+                let id = item.get("id")?.as_str()?;
+                let a = item.get("attributes")?;
+                // Chapter eksternal tak bisa at-home → tandai agar UI skip unduh.
+                let external = a.get("externalUrl").and_then(|u| u.as_str()).filter(|u| !u.is_empty()).map(str::to_string);
+                let num = a.get("chapter").and_then(|c| c.as_str()).unwrap_or("");
+                let vol = a.get("volume").and_then(|c| c.as_str()).unwrap_or("");
+                let name = a.get("title").and_then(|t| t.as_str()).unwrap_or("");
+                let mut title = if num.is_empty() { "Oneshot".to_string() } else { format!("Chapter {num}") };
+                if !vol.is_empty() {
+                    title = format!("Vol. {vol} · {title}");
+                }
+                if !name.is_empty() {
+                    title = format!("{title} — {name}");
+                }
+                Some(Chapter {
+                    id: id.to_string(),
+                    content_id: manga_id.to_string(),
+                    title,
+                    order: num.parse::<u32>().ok().unwrap_or(i as u32 + 1),
+                    is_external: external.is_some(),
+                    external_url: external,
+                })
+            })
+            .collect())
+    }
+
+    /// Judul: `title.en` → nilai non-kosong pertama → `altTitles` → default.
+    fn md_title(attrs: &serde_json::Value) -> String {
+        if let Some(map) = attrs.get("title").and_then(|t| t.as_object()) {
+            if let Some(en) = map.get("en").and_then(|v| v.as_str()) {
+                if !en.trim().is_empty() {
+                    return en.to_string();
+                }
+            }
+            for (_, v) in map {
+                if let Some(s) = v.as_str() {
+                    if !s.trim().is_empty() {
+                        return s.to_string();
+                    }
+                }
+            }
+        }
+        if let Some(arr) = attrs.get("altTitles").and_then(|v| v.as_array()) {
+            for entry in arr {
+                if let Some(map) = entry.as_object() {
+                    if let Some(en) = map.get("en").and_then(|v| v.as_str()) {
+                        if !en.trim().is_empty() {
+                            return en.to_string();
+                        }
+                    }
+                    for (_, v) in map {
+                        if let Some(s) = v.as_str() {
+                            if !s.trim().is_empty() {
+                                return s.to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "(tanpa judul)".to_string()
+    }
+
     fn parse_mangadex(body: &str) -> Result<Vec<ContentModel>, AppError> {
         let v: serde_json::Value = serde_json::from_str(body)
             .map_err(|e| AppError::Network(format!("mangadex json: {e}")))?;
@@ -647,13 +1037,11 @@ impl GenericRestAdapter {
         let mut out = Vec::new();
         for item in data {
             let id = item.get("id").and_then(|i| i.as_str()).unwrap_or_default();
+            if id.is_empty() {
+                continue;
+            }
             let attrs = item.get("attributes");
-            let title = attrs
-                .and_then(|a| a.get("title"))
-                .and_then(|t| t.get("en").or_else(|| t.get("ja-ro")))
-                .and_then(|t| t.as_str())
-                .unwrap_or("(tanpa judul)")
-                .to_string();
+            let title = attrs.map(Self::md_title).unwrap_or_else(|| "(tanpa judul)".to_string());
             let cover = item
                 .get("relationships")
                 .and_then(|r| r.as_array())
@@ -666,21 +1054,39 @@ impl GenericRestAdapter {
                             })
                         })
                         .map(|f| {
-                            format!(
-                                "https://uploads.mangadex.org/covers/{id}/{f}.256.jpg"
-                            )
+                            MANGADEX_COVER_TPL
+                                .replace("{id}", id)
+                                .replace("{file}", f)
                         })
                         .unwrap_or_default()
                 })
                 .unwrap_or_default();
+            // Field config 1:1 (`api.list.fields`): originalLanguage,
+            // lastChapter→pageCount, updatedAt/createdAt.
+            let language = attrs
+                .and_then(|a| a.get("originalLanguage"))
+                .and_then(|l| l.as_str())
+                .filter(|l| !l.is_empty())
+                .map(str::to_string);
+            let page_count = attrs
+                .and_then(|a| a.get("lastChapter"))
+                .and_then(|c| c.as_str())
+                .and_then(|c| c.parse::<u32>().ok());
+            let upload_date = attrs
+                .and_then(|a| {
+                    a.get("updatedAt").or_else(|| a.get("createdAt"))
+                })
+                .and_then(|d| d.as_str())
+                .filter(|d| !d.is_empty())
+                .map(str::to_string);
             out.push(ContentModel {
                 id: id.to_string(),
                 title,
                 cover_url: cover,
                 source_id: "mangadex".to_string(),
-                upload_date: None,
-                page_count: None,
-                language: None,
+                upload_date,
+                page_count,
+                language,
             });
         }
         Ok(out)
@@ -714,8 +1120,23 @@ impl GenericScraperAdapter {
         url: &str,
         config: &SourceConfig,
     ) -> Result<Vec<ContentModel>, AppError> {
+        Ok(self.fetch_list_with_next(url, config).await?.0)
+    }
+
+    /// List + link halaman berikut (cursor token; `None` bila habis/tak ada).
+    pub async fn fetch_list_with_next(
+        &self,
+        url: &str,
+        config: &SourceConfig,
+    ) -> Result<(Vec<ContentModel>, Option<String>), AppError> {
         let html = self.http.get(url, &config.source_id).await?;
-        Self::parse_list(&html, config)
+        let items = Self::parse_list(&html, config)?;
+        let next = if config.pagination_next.trim().is_empty() {
+            None
+        } else {
+            extract_next_url(&html, &config.base_url, &config.pagination_next)
+        };
+        Ok((items, next))
     }
 
     fn parse_list(html: &str, config: &SourceConfig) -> Result<Vec<ContentModel>, AppError> {
@@ -736,7 +1157,12 @@ impl GenericScraperAdapter {
             if id.is_empty() {
                 id = Self::item_id(&href);
             }
-            let cover = config.absolutize(&extract(item, &cover_sel, &config.cover));
+            let mut cover = config.absolutize(&extract(item, &cover_sel, &config.cover));
+            // Enrichment ala `EHentaiScraperAdapter` mobile: cover acap di
+            // `style="background:...url(...)"` (`.glthumb div`), bukan `<img>`.
+            if cover.is_empty() {
+                cover = config.absolutize(&style_cover_url(item));
+            }
             // Field opsional config-driven ala mapper mobile: pageCount (int
             // pertama) + language (normalisasi, fallback default situs).
             let page_count = if config.page_count.selector.trim().is_empty() {
@@ -754,6 +1180,8 @@ impl GenericScraperAdapter {
                 let sel = Self::sel(&config.language.selector)?;
                 normalize_lang(&extract(item, &sel, &config.language))
             }
+            // Fallback tag bahasa baris (mobile: `.gt[title^="language:"]`).
+            .or_else(|| row_language(item))
             .or_else(|| config.default_language.clone());
             out.push(ContentModel {
                 id,
@@ -787,14 +1215,33 @@ impl GenericScraperAdapter {
             title
         };
         let cover = config.absolutize(&extract(root, &cover_sel, cmap));
+        // pageCount + language detail config-driven (mobile `toDetail`).
+        let page_count = if config.detail_page_count.selector.trim().is_empty() {
+            None
+        } else {
+            let sel = Self::sel(&config.detail_page_count.selector)?;
+            let raw = extract(root, &sel, &config.detail_page_count);
+            raw.split(|c: char| !c.is_ascii_digit())
+                .find(|x| !x.is_empty())
+                .and_then(|x| x.parse::<u32>().ok())
+        };
+        let language = if config.detail_language.selector.trim().is_empty() {
+            None
+        } else {
+            let sel = Self::sel(&config.detail_language.selector)?;
+            normalize_lang(&extract(root, &sel, &config.detail_language))
+        }
+        // Fallback tag `td_language:x` (mobile `_normalizeEhentaiTags`).
+        .or_else(|| detail_language_tag(&doc))
+        .or_else(|| config.default_language.clone());
         Ok(ContentModel {
             id: Self::item_id(url),
             title,
             cover_url: cover,
             source_id: config.source_id.clone(),
             upload_date: None,
-            page_count: None,
-            language: config.default_language.clone(),
+            page_count,
+            language,
         })
     }
 
@@ -805,6 +1252,10 @@ impl GenericScraperAdapter {
         config: &SourceConfig,
     ) -> Result<Vec<Chapter>, AppError> {
         let html = self.http.get(url, &config.source_id).await?;
+        // E-Hentai: Part chapters dari paginasi galeri (mobile `_buildPartChapters`).
+        if config.source_id == "ehentai" {
+            return Self::ehentai_part_chapters(&html, url, content_id);
+        }
         // Selector chapter kosong = sumber single-chapter.
         if config.chapter_selector.trim().is_empty() {
             return Ok(vec![Chapter {
@@ -887,6 +1338,52 @@ impl GenericScraperAdapter {
             .collect())
     }
 
+    /// Part chapters E-Hentai: galeri `?p=N` jadi Part 1..N+1.
+    /// Reader lazy per `/s/` butuh Fase 5; daftar part kini benar dulu.
+    fn ehentai_part_chapters(
+        html: &str,
+        url: &str,
+        content_id: &str,
+    ) -> Result<Vec<Chapter>, AppError> {
+        if !content_id.contains('/') {
+            return Ok(vec![Chapter {
+                id: format!("{content_id}-1"),
+                content_id: content_id.to_string(),
+                title: "Baca".to_string(),
+                order: 1,
+                is_external: false,
+                external_url: Some(url.to_string()),
+            }]);
+        }
+        let doc = Html::parse_document(html);
+        let mut max_page = 0u32;
+        if let Ok(sel) = Selector::parse("a[href*=\"?p=\"]") {
+            for a in doc.select(&sel) {
+                let href = a.value().attr("href").unwrap_or("");
+                if let Some((_, q)) = href.split_once('?') {
+                    for pair in q.split('&') {
+                        if let Some(v) = pair.strip_prefix("p=") {
+                            if let Ok(n) = v.parse::<u32>() {
+                                max_page = max_page.max(n);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let base = url.split_once('?').map(|(b, _)| b).unwrap_or(url);
+        Ok((0..=max_page)
+            .map(|p| Chapter {
+                id: format!("{content_id}?p={p}"),
+                content_id: content_id.to_string(),
+                title: format!("Part {}", p + 1),
+                order: p + 1,
+                is_external: false,
+                external_url: Some(format!("{base}?p={p}")),
+            })
+            .collect())
+    }
+
     pub async fn fetch_page_images(
         &self,
         url: &str,
@@ -919,11 +1416,27 @@ mod tests {
     const MANGADEX_JSON: &str = r#"{
         "data": [{
             "id": "manga-1",
-            "attributes": {"title": {"en": "Sample Manga"}},
+            "attributes": {
+                "title": {"en": "Sample Manga"},
+                "altTitles": [{"ja-ro": "Sanpuru Manga"}],
+                "originalLanguage": "ja",
+                "lastChapter": "42",
+                "updatedAt": "2026-09-01T00:00:00+00:00"
+            },
             "relationships": [
                 {"type": "author", "id": "a1"},
                 {"type": "cover_art", "attributes": {"fileName": "cover1.jpg"}}
             ]
+        }, {
+            "id": "manga-2",
+            "attributes": {
+                "title": {},
+                "altTitles": [{"en": "Alt Title Manga"}],
+                "originalLanguage": "en",
+                "lastChapter": null,
+                "createdAt": "2026-08-01T00:00:00+00:00"
+            },
+            "relationships": []
         }]
     }"#;
 
@@ -970,6 +1483,7 @@ mod tests {
             list_path: "/".to_string(),
             home_path: "/".to_string(),
             home_page_path: String::new(),
+            pagination_next: String::new(),
             detail_path: "/g/{id}/".to_string(),
             item_selector: ".gallery".to_string(),
             id: FieldMap {
@@ -983,6 +1497,8 @@ mod tests {
             cover: FieldMap::attr("img", "src"),
             detail_title: FieldMap::default(),
             detail_cover: FieldMap::default(),
+        detail_page_count: FieldMap::default(),
+        detail_language: FieldMap::default(),
             chapter_selector: "a.go".to_string(),
             chapter_link: FieldMap::attr("a.go", "href"),
             chapter_title: FieldMap::text("a.go"),
@@ -1038,17 +1554,46 @@ mod tests {
             tauri::async_runtime::block_on(http.get(&format!("{base}/api"), "mangadex"))
                 .unwrap();
         let items = GenericRestAdapter::parse_mangadex(&body).unwrap();
-        assert_eq!(items.len(), 1);
+        assert_eq!(items.len(), 2);
         assert_eq!(items[0].id, "manga-1");
         assert_eq!(items[0].title, "Sample Manga");
         assert_eq!(
             items[0].cover_url,
-            "https://uploads.mangadex.org/covers/manga-1/cover1.jpg.256.jpg"
+            "https://mangadex.org/covers/manga-1/cover1.jpg.512.jpg"
         );
+        assert_eq!(items[0].language.as_deref(), Some("ja"));
+        assert_eq!(items[0].page_count, Some(42));
+        assert_eq!(items[0].upload_date.as_deref(), Some("2026-09-01T00:00:00+00:00"));
+        // Judul fallback altTitles; tanpa cover → string kosong.
+        assert_eq!(items[1].title, "Alt Title Manga");
+        assert!(items[1].cover_url.is_empty());
+        assert_eq!(items[1].language.as_deref(), Some("en"));
+        assert_eq!(items[1].page_count, None);
+        assert_eq!(items[1].upload_date.as_deref(), Some("2026-08-01T00:00:00+00:00"));
     }
 
     #[test]
-    #[ignore = "hits live api.mangadex.org; jalankan manual: cargo test live_mangadex -- --ignored"]
+    #[ignore = "hits live e-hentai.org; jalankan manual: cargo test live_ehentai -- --ignored"]
+    fn live_ehentai_cursor_pagination() {
+        use std::collections::HashSet;
+        let http = HttpClientManager::new().unwrap();
+        let engine = GenericScraperAdapter::new(http);
+        let cfg = ehentai_config();
+        let (items1, next) =
+            tauri::async_runtime::block_on(engine.fetch_list_with_next(&cfg.home_url_page(1), &cfg))
+                .unwrap();
+        assert!(!items1.is_empty(), "home EH kosong (CF/cookie?)");
+        let next_url = next.expect("halaman 1 EH tanpa link next");
+        assert!(next_url.contains("next="), "{next_url}");
+        let (items2, _) =
+            tauri::async_runtime::block_on(engine.fetch_list_with_next(&next_url, &cfg)).unwrap();
+        assert!(!items2.is_empty(), "halaman 2 EH kosong");
+        let ids1: HashSet<&str> = items1.iter().map(|c| c.id.as_str()).collect();
+        assert!(
+            items2.iter().any(|c| !ids1.contains(c.id.as_str())),
+            "halaman 2 duplikat halaman 1 (?page= diabaikan situs)"
+        );
+    }
     fn live_mangadex_search_parses() {
         // NHentai/Hitomi/E-H live 403 dari network tanpa cookie CF
         // (risiko spec §7 — mitigasi: cookie harvest Fase 2 lanjutan).
@@ -1062,6 +1607,21 @@ mod tests {
         let detail =
             tauri::async_runtime::block_on(rest.get_mangadex_detail(&items[0].id)).unwrap();
         assert_eq!(detail.id, items[0].id);
+        // Home (allGalleries) + chapter + at-home 1:1 config.
+        let home =
+            tauri::async_runtime::block_on(rest.search_mangadex("", 1)).unwrap();
+        assert!(!home.is_empty(), "allGalleries kosong");
+        assert!(home[0].language.is_some(), "bahasa hilang: {:?}", home[0]);
+        let chapters =
+            tauri::async_runtime::block_on(rest.chapters_mangadex(&items[0].id)).unwrap();
+        assert!(!chapters.is_empty(), "chapter kosong untuk {}", items[0].id);
+        let internal = chapters.iter().find(|c| !c.is_external);
+        if let Some(ch) = internal {
+            let pages =
+                tauri::async_runtime::block_on(rest.pages_mangadex_at_home(&ch.id)).unwrap();
+            assert!(!pages.is_empty(), "at-home kosong untuk {}", ch.id);
+            assert!(pages[0].starts_with("http"), "{}", pages[0]);
+        }
     }
 }
 
@@ -1357,12 +1917,73 @@ mod nhentai_tests {
     }
 
     #[test]
+    fn ehentai_next_token_extracted() {
+        // Paging E-Hentai = token `?next=`, bukan `?page=` (curl bukti 2026-09-20).
+        let html = r#"<html><body><div class="searchnav">
+            <a id="uprev" href="/?prev=99">Prev</a>
+            <a id="unext" href="/?next=4200603">Next</a></div>
+            <script>var nexturl="https://e-hentai.org/?next=4200603";</script></body></html>"#;
+        let next = extract_next_url(html, "https://e-hentai.org", "#unext").unwrap();
+        assert_eq!(next, "https://e-hentai.org/?next=4200603");
+        // Tanpa selector config: cadangan #dnext/.searchnav tetap jalan.
+        let html2 = r#"<html><body><div class="searchnav"><a href="/?f_search=x&next=77">N</a></div></body></html>"#;
+        let next2 = extract_next_url(html2, "https://e-hentai.org", "").unwrap();
+        assert!(next2.contains("next=77"), "{next2}");
+        // Fallback script bila nav tak ada.
+        let html3 = r#"<html><body><script>var nexturl="/?next=55";</script></body></html>"#;
+        let next3 = extract_next_url(html3, "https://e-hentai.org", "").unwrap();
+        assert!(next3.contains("next=55"), "{next3}");
+        // Cursor put/get/exhausted.
+        let c = PaginationCursors::default();
+        let k1 = PaginationCursors::home_key("ehentai", 1);
+        let k2 = PaginationCursors::home_key("ehentai", 2);
+        assert!(c.get(&k2).is_none());
+        c.put_next(&k2, "https://e-hentai.org/?next=1".to_string());
+        assert!(matches!(c.get(&k2), Some(CursorState::Next(_))));
+        assert!(!matches!(c.get(&k2), Some(CursorState::Exhausted)));
+        c.mark_exhausted(&k1);
+        assert!(matches!(c.get(&k1), Some(CursorState::Exhausted)));
+        assert!(!matches!(c.get(&k1), Some(CursorState::Next(_))));
+        let _ = k1;
+    }
+
+    #[test]
     fn configs_constructible() {
         // Site config kompilasi + URL terbentuk (tuning selector lanjut live).
         let cfg = nhentai_config();
         assert!(cfg.list_url("test", 1).contains("nhentai.net/search"));
         assert!(hitomi_config().list_url("x", 1).contains("hitomi.la"));
-        assert!(ehentai_config().list_url("x", 1).contains("e-hentai.org"));
+        let eh = ehentai_config();
+        assert!(eh.list_url("x", 1).contains("e-hentai.org"));
+        // Nilai 1:1 `ehentai-config.json` mobile.
+        assert_eq!(eh.item_selector, ".itg.gltc tr");
+        assert_eq!(eh.home_path, "/?page={page}");
+        // Load more home: halaman 2 WAJIB beda URL (bug 2026-09-20: ulang hal 1).
+        assert!(eh.home_url_page(1).ends_with("/?page=1") || eh.home_url_page(1).ends_with("/"));
+        assert!(eh.home_url_page(2).contains("page=2"), "{}", eh.home_url_page(2));
+    }
+
+    #[test]
+    fn ehentai_list_enrichment_and_parts() {
+        // Cover style + bahasa .gt + part chapters ala mobile.
+        let html = r#"<html><body><table class="itg gltc">
+            <tr><td class="gl2c"><div class="glthumb"><div style="background:transparent url(https://ehgt.org/aa/bb.jpg) no-repeat"></div></div></td>
+            <td class="gl3c glname"><a href="https://e-hentai.org/g/12345/tokenab/"><div class="glink">Galeri Satu</div></a>
+            <div class="gt" title="language:english"></div></td></tr>
+            </table>
+            <a href="/g/12345/tokenab/?p=1">2</a></body></html>"#;
+        let cfg = ehentai_config();
+        let items = GenericScraperAdapter::parse_list(html, &cfg).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, "12345/tokenab");
+        assert_eq!(items[0].cover_url, "https://ehgt.org/aa/bb.jpg");
+        assert_eq!(items[0].language.as_deref(), Some("en"));
+        let parts = GenericScraperAdapter::ehentai_part_chapters(
+            html, "https://e-hentai.org/g/12345/tokenab/", "12345/tokenab",
+        ).unwrap();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].title, "Part 1");
+        assert_eq!(parts[1].external_url.as_deref(), Some("https://e-hentai.org/g/12345/tokenab/?p=1"));
     }
 
     const SEARCH_JSON: &str = r#"{"result": [
