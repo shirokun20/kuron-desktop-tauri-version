@@ -1552,7 +1552,8 @@ impl GenericRestAdapter {
         for lang in tries {
             let url = Self::md_chapters_url(&template, &self.md_base(), manga_id, lang, offset);
             let body = self.http.get(&url, "mangadex").await?;
-            let items = Self::parse_mangadex_chapters(&body, manga_id)?;
+            let items =
+                Self::parse_mangadex_chapters(&body, manga_id, offset.unwrap_or(0))?;
             if !items.is_empty() || lang.is_none() {
                 return Ok(items);
             }
@@ -1612,7 +1613,14 @@ impl GenericRestAdapter {
             .collect())
     }
 
-    fn parse_mangadex_chapters(body: &str, manga_id: &str) -> Result<Vec<Chapter>, AppError> {
+    /// Urutan = posisi feed API (+`base_offset` load-more). Mobile TANPA
+    /// sorting (entity Chapter tanpa order); parse nomor chapter dilarang
+    /// (desimal/sufiks/oneshot gagal → skema campur → urutan ngaco).
+    fn parse_mangadex_chapters(
+        body: &str,
+        manga_id: &str,
+        base_offset: u32,
+    ) -> Result<Vec<Chapter>, AppError> {
         let v: serde_json::Value = serde_json::from_str(body)
             .map_err(|e| AppError::Network(format!("mangadex chapters json: {e}")))?;
         let empty = vec![];
@@ -1652,7 +1660,7 @@ impl GenericRestAdapter {
                     id: id.to_string(),
                     content_id: manga_id.to_string(),
                     title,
-                    order: num.parse::<u32>().ok().unwrap_or(i as u32 + 1),
+                    order: base_offset + i as u32 + 1,
                     is_external: external.is_some(),
                     external_url: external,
                     language,
@@ -2438,7 +2446,7 @@ mod tests {
                 "title": "", "translatedLanguage": "en",
                 "externalUrl": "https://luar.example/baca"}}
         ]}"#;
-        let items = GenericRestAdapter::parse_mangadex_chapters(body, "m1").unwrap();
+        let items = GenericRestAdapter::parse_mangadex_chapters(body, "m1", 0).unwrap();
         assert_eq!(items.len(), 3);
         assert_eq!(items[0].language.as_deref(), Some("en"));
         assert_eq!(items[0].title, "Vol. 2 · Chapter 12 — Storm");
@@ -2450,6 +2458,32 @@ mod tests {
             items[2].external_url.as_deref(),
             Some("https://luar.example/baca")
         );
+    }
+
+    #[test]
+    fn md_chapters_keep_feed_order_not_number_sort() {
+        // Regresi user: urutan MD "ngaco" vs mobile. Mobile TAK sorting
+        // (tanpa field order) — tampil urut feed API (`order[chapter]=desc`).
+        // `order` = posisi feed 1-based (+offset load-more), BUKAN parse
+        // nomor chapter (gagal di desimal/sufiks/oneshot → campur skema).
+        let body = r#"{"data": [
+            {"id": "ch-13", "attributes": {"chapter": "13", "volume": null,
+                "title": "", "translatedLanguage": "en", "externalUrl": null}},
+            {"id": "ch-125", "attributes": {"chapter": "12.5", "volume": null,
+                "title": "", "translatedLanguage": "en", "externalUrl": null}},
+            {"id": "ch-12", "attributes": {"chapter": "12", "volume": null,
+                "title": "", "translatedLanguage": "en", "externalUrl": null}},
+            {"id": "ch-one", "attributes": {"chapter": null, "volume": null,
+                "title": "", "translatedLanguage": "en", "externalUrl": null}}
+        ]}"#;
+        let items = GenericRestAdapter::parse_mangadex_chapters(body, "m1", 0).unwrap();
+        let ids: Vec<&str> = items.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, vec!["ch-13", "ch-125", "ch-12", "ch-one"]);
+        let orders: Vec<u32> = items.iter().map(|c| c.order).collect();
+        assert_eq!(orders, vec![1, 2, 3, 4]);
+        // Halaman load-more lanjut (offset=100 → 101..).
+        let more = GenericRestAdapter::parse_mangadex_chapters(body, "m1", 100).unwrap();
+        assert_eq!(more[0].order, 101);
     }
 
     #[test]
