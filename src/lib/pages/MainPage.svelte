@@ -15,10 +15,9 @@
   import ThemeToggle from "../components/ThemeToggle.svelte";
   import MainFeaturedCard from "../components/MainFeaturedCard.svelte";
   import MainGridCard from "../components/MainGridCard.svelte";
-  import DetailPage from "./DetailPage.svelte";
   import LibraryPage from "./LibraryPage.svelte";
-  import ReaderPage from "./ReaderPage.svelte";
-  import type { Chapter, Content } from "../domain/types";
+  import { routeStore } from "../router/route.svelte";
+  import type { Content } from "../domain/types";
 
   const ICONS = {
     home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>',
@@ -58,10 +57,8 @@
   ];
 
   let activeNav = $state("home");
-  // Rantai baca: kartu → detail → reader. Kembali = null berurutan.
-  let selectedContent = $state<Content | null>(null);
-  let readingChapter = $state<Chapter | null>(null);
-  let readingList = $state<Chapter[]>([]);
+  // Rantai baca (kartu → detail → reader) pindah ke route khusus fullscreen
+  // (routeStore) — MainPage murni beranda + library.
   // Desktop: `collapsed` = sidebar mini. Mobile (layar sempit): `drawerOpen`.
   let collapsed = $state(false);
   let drawerOpen = $state(false);
@@ -87,18 +84,12 @@
       await overlayStore.open(id);
       return;
     }
-    // Pindah nav keluar dari rantai baca (detail/reader).
-    selectedContent = null;
-    readingChapter = null;
-    readingList = [];
     activeNav = id;
   }
 
-  /** Kartu/baris diklik (feed, favorit, riwayat) → halaman detail. */
+  /** Kartu/baris diklik (feed, favorit, riwayat) → route detail khusus. */
   function selectContent(c: Content) {
-    readingChapter = null;
-    readingList = [];
-    selectedContent = c;
+    routeStore.openDetail(c);
   }
 
   onMount(() => {
@@ -177,26 +168,7 @@
       {#if overlayStore.error}
         <p class="err">{overlayStore.error}</p>
       {/if}
-      {#if readingChapter && selectedContent}
-        <ReaderPage
-          content={selectedContent}
-          chapter={readingChapter}
-          siblings={readingList}
-          source={selectedContent.source_id}
-          onback={() => (readingChapter = null)}
-          onchapter={(ch) => (readingChapter = ch)}
-        />
-      {:else if selectedContent}
-        <DetailPage
-          content={selectedContent}
-          onback={() => (selectedContent = null)}
-          onopenchapter={(ch, list) => {
-            readingList = list;
-            readingChapter = ch;
-          }}
-          onselectcontent={selectContent}
-        />
-      {:else if activeNav === "favorites" || activeNav === "history"}
+      {#if activeNav === "favorites" || activeNav === "history"}
         <LibraryPage tab={activeNav} onselect={selectContent} />
       {:else}
       {#if contentStore.loading && contentStore.feed.length === 0}

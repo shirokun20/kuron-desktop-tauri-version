@@ -141,6 +141,10 @@ impl SqliteDs {
                     page_count: None,
                     language: None,
                     tags: Vec::new(),
+                    available_languages: Vec::new(),
+                    description: None,
+                    rating: None,
+                    favorites: None,
                 })
             },
         )
@@ -222,6 +226,10 @@ impl SqliteDs {
                     page_count: None,
                     language: None,
                     tags: Vec::new(),
+                    available_languages: Vec::new(),
+                    description: None,
+                    rating: None,
+                    favorites: None,
                 },
                 row.get::<_, i64>(6)?,
                 row.get::<_, i64>(7)?,
@@ -307,6 +315,10 @@ impl SqliteDs {
                 page_count: None,
                 language: None,
                 tags: Vec::new(),
+                available_languages: Vec::new(),
+                description: None,
+                rating: None,
+                favorites: None,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
@@ -658,6 +670,10 @@ mod tests {
             page_count: None,
             language: None,
             tags: Vec::new(),
+            available_languages: Vec::new(),
+            description: None,
+            rating: None,
+            favorites: None,
         }
     }
 

@@ -14,7 +14,7 @@ impl<R: ContentRepository> GetChaptersUseCase<R> {
         Self { repo }
     }
 
-    pub async fn execute(&self, content_id: &str) -> Result<Vec<Chapter>, AppError> {
-        self.repo.get_chapters(content_id).await
+    pub async fn execute(&self, content_id: &str, language: Option<&str>) -> Result<Vec<Chapter>, AppError> {
+        self.repo.get_chapters(content_id, language).await
     }
 }

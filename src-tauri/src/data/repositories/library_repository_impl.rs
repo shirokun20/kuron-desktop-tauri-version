@@ -96,6 +96,10 @@ mod tests {
             page_count: None,
             language: None,
             tags: Vec::new(),
+            available_languages: Vec::new(),
+            description: None,
+            rating: None,
+            favorites: None,
         }
     }
 

@@ -54,8 +54,16 @@ export const api = {
     call("cmd_tag_query", { source, tagType, tagName }),
   detail: (contentId: string, source?: string): Promise<Content> =>
     call("cmd_get_detail", { contentId, source: source ?? null }),
-  chapters: (contentId: string, source?: string): Promise<Chapter[]> =>
-    call("cmd_get_chapters", { contentId, source: source ?? null }),
+  chapters: (
+    contentId: string,
+    source?: string,
+    language?: string | null,
+  ): Promise<Chapter[]> =>
+    call("cmd_get_chapters", {
+      contentId,
+      source: source ?? null,
+      language: language ?? null,
+    }),
   pageImages: (chapterId: string, source?: string): Promise<PageImageResult[]> =>
     call("cmd_get_page_images", { chapterId, source: source ?? null }),
   related: (contentId: string, source?: string): Promise<Content[]> =>

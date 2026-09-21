@@ -19,6 +19,14 @@ pub struct ContentModel {
     /// Tag metadata (detail nhentai); kosong bila sumber tak sediakan.
     #[serde(default)]
     pub tags: Vec<Tag>,
+    #[serde(default)]
+    pub available_languages: Vec<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub rating: Option<f64>,
+    #[serde(default)]
+    pub favorites: Option<i64>,
 }
 
 impl From<ContentModel> for Content {
@@ -33,6 +41,10 @@ impl From<ContentModel> for Content {
             page_count: m.page_count,
             language: m.language,
             tags: m.tags,
+            available_languages: m.available_languages,
+            description: m.description,
+            rating: m.rating,
+            favorites: m.favorites,
         }
     }
 }
@@ -48,6 +60,10 @@ impl From<Content> for ContentModel {
             page_count: e.page_count,
             language: e.language,
             tags: e.tags,
+            available_languages: e.available_languages,
+            description: e.description,
+            rating: e.rating,
+            favorites: e.favorites,
         }
     }
 }

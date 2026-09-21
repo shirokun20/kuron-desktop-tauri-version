@@ -54,7 +54,7 @@ mod roundtrip_tests {
             updated_at: 1_700_000_000,
         });
         assert_roundtrip(&Tag {
-            id: 33172,
+            id: "33172".into(),
             name: "doujinshi".into(),
             tag_type: "category".into(),
             count: 508869,

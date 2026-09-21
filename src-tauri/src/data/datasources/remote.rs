@@ -988,7 +988,14 @@ fn parse_nhentai_tags(v: &serde_json::Value) -> Vec<crate::domain::Tag> {
             arr.iter()
                 .filter_map(|t| {
                     Some(crate::domain::Tag {
-                        id: t.get("id").and_then(|n| n.as_i64()).unwrap_or(0),
+                        id: t
+                            .get("id")
+                            .and_then(|n| {
+                                n.as_i64()
+                                    .map(|n| n.to_string())
+                                    .or_else(|| n.as_str().map(str::to_string))
+                            })
+                            .unwrap_or_else(|| "0".to_string()),
                         name: t.get("name")?.as_str()?.to_string(),
                         tag_type: t
                             .get("type")
@@ -1032,6 +1039,13 @@ const MANGADEX_DETAIL: &str =
     "/manga/{id}?includes[]=cover_art&includes[]=author&includes[]=artist";
 const MANGADEX_CHAPTERS: &str = "/chapter?manga={id}&translatedLanguage[]={language}&limit=100&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic";
 const MANGADEX_AT_HOME: &str = "/at-home/server/{chapterId}";
+/// Statistik (mobile `api.statistics.followsEndpoint`): follows + rating.
+const MANGADEX_STATS: &str = "/statistics/manga/{id}";
+/// Terkait fase-1 (mobile `api.related.batch.idEndpoint`): rekomendasi.
+const MANGADEX_RECOMMEND: &str = "/manga/{id}/recommendation?includes[]=manga";
+/// Terkait fase-2 (mobile `itemsEndpoint`): batch `ids[]`, parse = list.
+const MANGADEX_BY_IDS: &str =
+    "/manga?ids[]={ids}&includes[]=cover_art&includes[]=author&includes[]=artist&limit=100";
 
 /// Bahasa detail dari `<div id="td_language:x">` (mobile `_extractTags`).
 fn detail_language_tag(doc: &Html) -> Option<String> {
@@ -1307,7 +1321,9 @@ impl GenericRestAdapter {
         out
     }
 
-    /// Detail satu manga via API (`/manga/{id}`).
+    /// Detail satu manga via API (`/manga/{id}`) + enrichment mobile:
+    /// `availableTranslatedLanguages`, `description`, `tags[]`, lalu
+    /// statistik (`api.statistics`, fail-soft ala mobile: gagal → None).
     pub async fn get_mangadex_detail(&self, id: &str) -> Result<ContentModel, AppError> {
         let url = self.md_endpoint("detail", &[("id", id)], MANGADEX_DETAIL);
         let body = self.http.get(&url, "mangadex").await?;
@@ -1317,14 +1333,149 @@ impl GenericRestAdapter {
         let data = v.get("data").map(|d| vec![d.clone()]).unwrap_or(empty);
         let json = serde_json::json!({ "data": data });
         let mut items = Self::parse_mangadex(&json.to_string())?;
-        items
+        let mut model = items
             .pop()
-            .ok_or_else(|| AppError::Validation(format!("mangadex: {id} tidak ditemukan")))
+            .ok_or_else(|| AppError::Validation(format!("mangadex: {id} tidak ditemukan")))?;
+        if let Some(attrs) = v.get("data").and_then(|d| d.get("attributes")) {
+            model.tags = Self::md_tags_of(attrs);
+            model.available_languages = Self::md_avail_langs_of(attrs);
+            model.description = Self::md_description_of(attrs);
+        }
+        // Statistik fail-soft: detail tetap utuh bila endpoint gagal.
+        let stats_url = self.md_endpoint("statistics", &[("id", id)], MANGADEX_STATS);
+        if let Ok(stats_body) = self.http.get(&stats_url, "mangadex").await {
+            let (follows, rating) = Self::parse_md_stats(&stats_body, id);
+            model.favorites = follows;
+            model.rating = rating;
+        }
+        Ok(model)
     }
 
-    /// Chapter feed (`api.detail.chapters`, mobile `fetchChapters`):
-    /// coba `en` dulu, fallback tanpa filter bahasa.
-    pub async fn chapters_mangadex(&self, manga_id: &str) -> Result<Vec<Chapter>, AppError> {
+    /// Tag MD (mobile `fields.tags`): id UUID, nama `name.en`,
+    /// tipe = `group` (genre/theme/format/content); count tak ada → 0.
+    fn md_tags_of(attrs: &serde_json::Value) -> Vec<crate::domain::Tag> {
+        let empty = vec![];
+        let arr = attrs.get("tags").and_then(|t| t.as_array()).unwrap_or(&empty);
+        arr.iter()
+            .filter_map(|t| {
+                let tag_attrs = t.get("attributes")?;
+                let names = tag_attrs.get("name")?;
+                let name = names
+                    .get("en")
+                    .and_then(|s| s.as_str())
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| {
+                        names.as_object()?.values().filter_map(|s| s.as_str()).find(|s| !s.is_empty())
+                    })?;
+                Some(crate::domain::Tag {
+                    id: t.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string(),
+                    name: name.to_string(),
+                    tag_type: tag_attrs
+                        .get("group")
+                        .and_then(|g| g.as_str())
+                        .unwrap_or("tag")
+                        .to_string(),
+                    count: 0,
+                })
+            })
+            .collect()
+    }
+
+    /// Bahasa tersedia (mobile `fields.availableTranslatedLanguages`).
+    fn md_avail_langs_of(attrs: &serde_json::Value) -> Vec<String> {
+        attrs
+            .get("availableTranslatedLanguages")
+            .and_then(|l| l.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|l| l.as_str())
+                    .filter(|l| !l.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Sinopsis (mobile `fields.description`): `en` lalu bahasa lain.
+    fn md_description_of(attrs: &serde_json::Value) -> Option<String> {
+        let desc = attrs.get("description")?;
+        if let Some(en) = desc.get("en").and_then(|s| s.as_str()).filter(|s| !s.is_empty()) {
+            return Some(en.to_string());
+        }
+        desc.as_object()?.values().filter_map(|s| s.as_str()).find(|s| !s.is_empty()).map(str::to_string)
+    }
+
+    /// Statistik (mobile `followsPath`/`ratingPath`): `(follows, rating)`.
+    fn parse_md_stats(body: &str, id: &str) -> (Option<i64>, Option<f64>) {
+        let stats = serde_json::from_str::<serde_json::Value>(body)
+            .ok()
+            .and_then(|v| Some(v.get("statistics")?.get(id)?.clone()));
+        let follows = stats.as_ref().and_then(|s| s.get("follows")).and_then(|f| f.as_i64().or_else(|| f.as_u64().map(|n| n as i64)));
+        let rating = stats
+            .as_ref()
+            .and_then(|s| s.get("rating"))
+            .and_then(|r| r.get("average"))
+            .and_then(|a| a.as_f64());
+        (follows, rating)
+    }
+
+    /// Terkait MD batch 2 fase (mobile `_fetchRelatedBatch`):
+    /// rekomendasi → id (buang self, dedup, urut skor) → batch `ids[]`
+    /// parse = list fields, diurut balik ke urutan fase-1.
+    pub async fn related_mangadex(&self, manga_id: &str) -> Result<Vec<ContentModel>, AppError> {
+        let url = self.md_endpoint("recommendation", &[("id", manga_id)], MANGADEX_RECOMMEND);
+        let body = self.http.get(&url, "mangadex").await?;
+        let ids = Self::parse_md_recommend_ids(&body, manga_id);
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        // `{ids}` → `ids[]=a&ids[]=b…` TANPA encode (`&` pemisah sah).
+        let template = self
+            .source_file
+            .as_ref()
+            .and_then(|f| f.api.as_ref())
+            .and_then(|a| a.endpoints.get("mangaByIds"))
+            .and_then(|e| e.as_str())
+            .unwrap_or(MANGADEX_BY_IDS);
+        let url = format!("{}{}", self.md_base(), template.replace("{ids}", &ids.join("&ids[]=")));
+        let body = self.http.get(&url, "mangadex").await?;
+        let mut items = Self::parse_mangadex(&body)?;
+        items.sort_by_key(|m| ids.iter().position(|id| id == &m.id).unwrap_or(usize::MAX));
+        Ok(items)
+    }
+
+    /// Id rekomendasi (mobile `idItems`+`idField`): `data[*]` →
+    /// `relationships[type==manga].id`, buang self + dedup (murni).
+    fn parse_md_recommend_ids(body: &str, self_id: &str) -> Vec<String> {
+        let empty = vec![];
+        let v: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
+        let data = v.get("data").and_then(|d| d.as_array()).unwrap_or(&empty);
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for item in data {
+            let rels = item.get("relationships").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+            for r in rels {
+                if r.get("type").and_then(|t| t.as_str()) != Some("manga") {
+                    continue;
+                }
+                if let Some(id) = r.get("id").and_then(|i| i.as_str()) {
+                    if !id.is_empty() && id != self_id && seen.insert(id.to_string()) {
+                        out.push(id.to_string());
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Chapter feed (`api.detail.chapters`, mobile `fetchChapters` +
+    /// `loadChapterLane`): bahasa eksplisit (chip UI) → satu fetch;
+    /// None → coba `en` dulu, fallback tanpa filter bahasa.
+    pub async fn chapters_mangadex(
+        &self,
+        manga_id: &str,
+        language: Option<&str>,
+    ) -> Result<Vec<Chapter>, AppError> {
         let template: String = self
             .source_file
             .as_ref()
@@ -1334,7 +1485,12 @@ impl GenericRestAdapter {
             .and_then(|e| e.as_str())
             .map(str::to_string)
             .unwrap_or_else(|| MANGADEX_CHAPTERS.to_string());
-        for lang in [Some("en"), None] {
+        let explicit = language.map(str::trim).filter(|l| !l.is_empty());
+        let tries: Vec<Option<&str>> = match explicit {
+            Some(l) => vec![Some(l)],
+            None => vec![Some("en"), None],
+        };
+        for lang in tries {
             let filled = fill_url(
                 &template,
                 &[("id", manga_id), ("language", lang.unwrap_or(""))],
@@ -1551,6 +1707,10 @@ impl GenericRestAdapter {
                 page_count,
                 language,
                 tags: Vec::new(),
+                available_languages: Vec::new(),
+                description: None,
+                rating: None,
+                favorites: None,
             });
         }
         Ok(out)
@@ -1656,6 +1816,10 @@ impl GenericScraperAdapter {
                 page_count,
                 language,
                 tags: Vec::new(),
+                available_languages: Vec::new(),
+                description: None,
+                rating: None,
+                favorites: None,
             });
         }
         Ok(out)
@@ -1725,6 +1889,10 @@ impl GenericScraperAdapter {
             page_count,
             language,
             tags: Vec::new(),
+            available_languages: Vec::new(),
+            description: None,
+            rating: None,
+            favorites: None,
         })
     }
 
@@ -2261,7 +2429,7 @@ mod tests {
         assert!(!home.is_empty(), "allGalleries kosong");
         assert!(home[0].language.is_some(), "bahasa hilang: {:?}", home[0]);
         let chapters =
-            tauri::async_runtime::block_on(rest.chapters_mangadex(&items[0].id)).unwrap();
+            tauri::async_runtime::block_on(rest.chapters_mangadex(&items[0].id, None)).unwrap();
         assert!(!chapters.is_empty(), "chapter kosong untuk {}", items[0].id);
         let internal = chapters.iter().find(|c| !c.is_external);
         if let Some(ch) = internal {
@@ -2391,6 +2559,10 @@ impl NhentaiApiAdapter {
                 .and_then(|v| v.as_u64().map(|n| n as u32)),
             language: nhentai_lang_of_ids(item),
             tags: Vec::new(),
+            available_languages: Vec::new(),
+            description: None,
+            rating: None,
+            favorites: None,
         })
     }
 
@@ -2492,6 +2664,10 @@ impl NhentaiApiAdapter {
                 .and_then(|n| n.as_u64().map(|n| n as u32)),
             language: nhentai_lang_of_tags(&v),
             tags: parse_nhentai_tags(&v),
+            available_languages: Vec::new(),
+            description: None,
+            rating: None,
+            favorites: v.get("num_favorites").and_then(|n| n.as_i64()),
         })
     }
 
@@ -2934,10 +3110,63 @@ mod nhentai_tests {
         .unwrap();
         let tags = parse_nhentai_tags(&v);
         assert_eq!(tags.len(), 2);
+        assert_eq!(tags[0].id, "33172");
         assert_eq!(tags[0].name, "doujinshi");
         assert_eq!(tags[0].tag_type, "category");
         assert_eq!(tags[0].count, 508869);
         assert_eq!(tags[1].name, "chinese");
+    }
+
+    #[test]
+    fn md_detail_enrichment_parses_live_shaped() {
+        // Murni: tags + availableTranslatedLanguages + description MD.
+        let attrs: serde_json::Value = serde_json::from_str(
+            r#"{"tags": [
+                {"id": "tag-uuid-1", "attributes": {"name": {"en": "Action"}, "group": "genre"}},
+                {"id": "tag-uuid-2", "attributes": {"name": {"ja": "冒険"}, "group": "theme"}}
+            ],
+            "availableTranslatedLanguages": ["en", "id"],
+            "description": {"en": "Sinopsis.", "id": "Ringkasan."}}"#,
+        )
+        .unwrap();
+        let tags = GenericRestAdapter::md_tags_of(&attrs);
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags[0].id, "tag-uuid-1");
+        assert_eq!(tags[0].name, "Action");
+        assert_eq!(tags[0].tag_type, "genre");
+        assert_eq!(tags[1].name, "冒険");
+        let langs = GenericRestAdapter::md_avail_langs_of(&attrs);
+        assert_eq!(langs, vec!["en".to_string(), "id".to_string()]);
+        assert_eq!(
+            GenericRestAdapter::md_description_of(&attrs).as_deref(),
+            Some("Sinopsis.")
+        );
+    }
+
+    #[test]
+    fn md_stats_parses_follows_and_rating() {
+        // Murni: `$.statistics.{id}.follows` + `.rating.average` (mobile).
+        let (follows, rating) = GenericRestAdapter::parse_md_stats(
+            r#"{"statistics": {"m1": {"follows": 1200, "rating": {"average": 8.71}}}}"#,
+            "m1",
+        );
+        assert_eq!(follows, Some(1200));
+        assert_eq!(rating, Some(8.71));
+        let (none_f, none_r) = GenericRestAdapter::parse_md_stats("{}", "m1");
+        assert!(none_f.is_none() && none_r.is_none());
+    }
+
+    #[test]
+    fn md_recommend_ids_skip_self_dedup_ordered() {
+        // Murni: relationships[type==manga].id, buang self + dedup.
+        let ids = GenericRestAdapter::parse_md_recommend_ids(
+            r#"{"data": [
+                {"relationships": [{"type": "manga", "id": "self"}, {"type": "manga", "id": "r1"}]},
+                {"relationships": [{"type": "manga", "id": "r1"}, {"type": "manga", "id": "r2"}, {"type": "user", "id": "u9"}]}
+            ]}"#,
+            "self",
+        );
+        assert_eq!(ids, vec!["r1".to_string(), "r2".to_string()]);
     }
 
     #[test]

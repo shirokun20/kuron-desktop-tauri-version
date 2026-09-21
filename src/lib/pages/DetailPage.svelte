@@ -1,11 +1,14 @@
 <script lang="ts">
-  // DetailPage — sampul bingkai tinta + judul display + lane bahasa chapter.
-  // Lane 1:1 `chapter_language_presenter.dart` (>1 lane = tab, else flat).
-  // Chapter internal → reader in-app; eksternal → browser via opener.
+  // DetailPage — route khusus fullscreen: hero tinta + sinopsis + tag grup +
+  // rel chapters di samping (20 preview + sheet penuh ala
+  // `ChapterListBottomSheet` mobile) + terkait + komentar.
+  // Chip bahasa 1:1 mobile: dari `available_languages` detail (bukan feed),
+  // tap chip = fetch ulang per bahasa (`loadChapterLane`); sumber tanpa
+  // daftar bahasa fallback ke lane hasil grouping feed.
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "../api/client";
   import MainGridCard from "../components/MainGridCard.svelte";
-  import type { Chapter, Comment, Content } from "../domain/types";
+  import type { Chapter, Comment, Content, Tag } from "../domain/types";
   import { libraryStore } from "../stores/library.svelte";
   import {
     buildChapterLanes,
@@ -25,12 +28,31 @@
     onselectcontent: (c: Content) => void;
   } = $props();
 
+  /** Preview rail: 20 pertama, sisanya via sheet (mobile: bottom sheet). */
+  const RAIL_PREVIEW = 20;
+  /** Urutan grup tag: tipe umum dulu, sisanya alfabet. */
+  const TAG_GROUP_ORDER = [
+    "category",
+    "genre",
+    "theme",
+    "format",
+    "content",
+    "artist",
+    "character",
+    "parody",
+    "group",
+    "language",
+    "tag",
+  ];
+
   let fetched = $state<Content | null>(null);
   let chapters = $state<Chapter[]>([]);
   let laneKey = $state<string | null>(null);
   let related = $state<Content[]>([]);
   let comments = $state<Comment[]>([]);
   let loading = $state(true);
+  let chaptersLoading = $state(false);
+  let sheetOpen = $state(false);
   let error = $state<string | null>(null);
 
   function fmtDate(epochSecs: bigint | number | null | undefined): string {
@@ -43,11 +65,68 @@
       year: "numeric",
     });
   }
+
+  function fmtCompact(n: bigint | number): string {
+    return new Intl.NumberFormat("id-ID", { notation: "compact" }).format(
+      Number(n),
+    );
+  }
+
   let fav = $derived(libraryStore.isFav(content.id));
   // Prop sebagai tampilan awal; hasil fetch menimpanya saat tiba.
   let detail = $derived(fetched ?? content);
+  // Chip bahasa dari detail (mobile); kosong → grouping feed (scraper).
+  let langChips = $derived(
+    detail.available_languages.length > 0
+      ? detail.available_languages
+      : [...new Set(chapters.map((c) => c.language).filter((l) => l != null))],
+  );
   let lanes = $derived(buildChapterLanes(chapters, laneKey));
   let visible = $derived(selectedLaneChapters(lanes));
+  let preview = $derived(visible.slice(0, RAIL_PREVIEW));
+  let tagGroups = $derived.by(() => {
+    const groups = new Map<string, Tag[]>();
+    for (const t of detail.tags) {
+      const list = groups.get(t.tag_type);
+      if (list) list.push(t);
+      else groups.set(t.tag_type, [t]);
+    }
+    return [...groups.entries()].sort(([a], [b]) => {
+      const ia = TAG_GROUP_ORDER.indexOf(a);
+      const ib = TAG_GROUP_ORDER.indexOf(b);
+      if (ia >= 0 || ib >= 0) {
+        if (ia < 0) return 1;
+        if (ib < 0) return -1;
+        return ia - ib;
+      }
+      return a.localeCompare(b);
+    });
+  });
+
+  /** Bahasa awal ala mobile: `en` bila tersedia, else pertama. */
+  function initialLang(langs: string[]): string | null {
+    if (langs.length === 0) return null;
+    return langs.includes("en") ? "en" : langs[0];
+  }
+
+  async function loadChapters(lang: string | null, cancelled: () => boolean) {
+    chaptersLoading = true;
+    try {
+      const ch = await api.chapters(content.id, content.source_id, lang);
+      if (cancelled()) return;
+      chapters = [...ch].sort((a, b) => a.order - b.order);
+    } finally {
+      if (!cancelled()) chaptersLoading = false;
+    }
+  }
+
+  function selectLang(lang: string) {
+    if (lang === laneKey || chaptersLoading) return;
+    laneKey = lang;
+    loadChapters(lang, () => false).catch(() => {
+      // gagal ganti bahasa = rail diam (bukan error merah)
+    });
+  }
 
   $effect(() => {
     const c = content;
@@ -58,15 +137,18 @@
     laneKey = null;
     related = [];
     comments = [];
+    sheetOpen = false;
     let cancelled = false;
     (async () => {
       try {
-        const [d, ch] = await Promise.all([
-          api.detail(c.id, c.source_id),
-          api.chapters(c.id, c.source_id),
-        ]);
+        // Detail dulu (chip bahasa datang darinya), lalu bab.
+        const d = await api.detail(c.id, c.source_id);
         if (cancelled) return;
         fetched = d;
+        const lang = initialLang(d.available_languages);
+        laneKey = lang;
+        const ch = await api.chapters(c.id, c.source_id, lang);
+        if (cancelled) return;
         chapters = [...ch].sort((a, b) => a.order - b.order);
         // Ala detail cubit mobile: terkait + komentar paralel non-blocking
         // setelah detail tampil; gagal = seksi absen (bukan error merah).
@@ -99,12 +181,22 @@
       if (ch.external_url) await openUrl(ch.external_url);
       return;
     }
+    sheetOpen = false;
     onopenchapter(ch, visible);
+  }
+
+  function onSheetKey(e: KeyboardEvent) {
+    if (e.key === "Escape") sheetOpen = false;
   }
 </script>
 
+<svelte:window onkeydown={sheetOpen ? onSheetKey : null} />
+
 <section class="detail">
-  <button class="ghost back" onclick={onback}>← Kembali</button>
+  <div class="topbar">
+    <button class="ghost back" onclick={onback}>← Kembali</button>
+    <span class="crumb">{detail.source_id}</span>
+  </div>
 
   {#if error}
     <p class="err">{error}</p>
@@ -127,9 +219,14 @@
       {/if}
     </div>
     <div class="info">
-      <p class="kicker">{detail.source_id}</p>
       <h1>{detail.title}</h1>
       <div class="badges">
+        {#if detail.rating != null}
+          <span class="badge hot">★ {detail.rating.toFixed(1)}</span>
+        {/if}
+        {#if detail.favorites != null}
+          <span class="badge">♥ {fmtCompact(detail.favorites)}</span>
+        {/if}
         {#if detail.page_count}
           <span class="badge">{detail.page_count} hal</span>
         {/if}
@@ -160,41 +257,164 @@
     </div>
   </div>
 
-  {#if detail.tags.length > 0}
-    <div class="tags" aria-label="Tag">
-      {#each detail.tags as tag (tag.id)}
-        <span class="tag" title={tag.tag_type}>{tag.name}</span>
-      {/each}
-    </div>
-  {/if}
+  <div class="body">
+    <div class="main-col">
+      {#if detail.description}
+        <h2 class="section">Sinopsis</h2>
+        <p class="synopsis">{detail.description}</p>
+      {/if}
 
-  <div class="chapters-head">
-    <h2>Bab</h2>
-    {#if lanes.lanes.length > 1}
-      <div class="lanes" role="tablist" aria-label="Bahasa bab">
-        {#each lanes.lanes as lane (lane.key)}
+      {#if tagGroups.length > 0}
+        <h2 class="section">Tag</h2>
+        <div class="tag-groups">
+          {#each tagGroups as [group, tags] (group)}
+            <div class="tag-group">
+              <span class="tag-group-label">{group}</span>
+              <div class="tags">
+                {#each tags as tag (tag.id)}
+                  <span
+                    class="tag"
+                    title={tag.count > 0n ? `${tag.count}×` : group}
+                  >
+                    {tag.name}
+                  </span>
+                {/each}
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      {#if related.length > 0}
+        <h2 class="section">Terkait</h2>
+        <div class="rail">
+          {#each related as item (item.id)}
+            <div class="related-card">
+              <MainGridCard content={item} onselect={onselectcontent} />
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      {#if comments.length > 0}
+        <h2 class="section">Komentar ({comments.length})</h2>
+        <ul class="comments">
+          {#each comments as cm (cm.id)}
+            <li class="comment">
+              {#if cm.avatar_url}
+                <img
+                  class="avatar"
+                  src={cm.avatar_url}
+                  alt=""
+                  loading="lazy"
+                  draggable="false"
+                  referrerpolicy="no-referrer"
+                />
+              {:else}
+                <span class="avatar fallback">
+                  {(cm.username || "?").slice(0, 1).toUpperCase()}
+                </span>
+              {/if}
+              <div class="cbody">
+                <div class="chead">
+                  <strong>{cm.username || "anon"}</strong>
+                  {#if fmtDate(cm.post_date)}
+                    <span class="muted">{fmtDate(cm.post_date)}</span>
+                  {/if}
+                </div>
+                <p>{cm.body}</p>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+
+    <aside class="rail-col" aria-label="Daftar bab">
+      <div class="chapters-card">
+        <div class="chapters-head">
+          <h2>Bab</h2>
+          {#if langChips.length > 1}
+            <div class="lanes" role="tablist" aria-label="Bahasa bab">
+              {#each langChips as lang (lang)}
+                <button
+                  class="lane"
+                  class:on={lanes.selectedKey === lang}
+                  role="tab"
+                  aria-selected={lanes.selectedKey === lang}
+                  onclick={() => selectLang(lang)}
+                >
+                  {langFlag(lang)}
+                  {langLabel(lang)}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        {#if loading || chaptersLoading}
+          <p class="muted">Memuat bab…</p>
+        {:else if visible.length === 0 && !error}
+          <p class="muted">Belum ada bab untuk konten ini.</p>
+        {:else}
+          <ul class="rows">
+            {#each preview as ch (ch.id)}
+              <li>
+                <button class="row" onclick={() => openChapter(ch)}>
+                  <span class="num">{ch.order}</span>
+                  <span class="title">{ch.title || `Bab ${ch.order}`}</span>
+                  {#if ch.is_external}
+                    <span class="ext">situs ↗</span>
+                  {/if}
+                </button>
+              </li>
+            {/each}
+          </ul>
+          {#if visible.length > RAIL_PREVIEW}
+            <button class="ghost wide" onclick={() => (sheetOpen = true)}>
+              Lihat semua {visible.length} bab
+            </button>
+          {/if}
+        {/if}
+      </div>
+    </aside>
+  </div>
+</section>
+
+{#if sheetOpen}
+  <div
+    class="sheet-backdrop"
+    role="presentation"
+    onclick={() => (sheetOpen = false)}
+  ></div>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Semua bab">
+    <div class="sheet-head">
+      <h2>Semua bab ({visible.length})</h2>
+      <button
+        class="ghost"
+        aria-label="Tutup daftar bab"
+        onclick={() => (sheetOpen = false)}
+      >
+        ✕
+      </button>
+    </div>
+    {#if langChips.length > 1}
+      <div class="lanes sheet-lanes" role="tablist" aria-label="Bahasa bab">
+        {#each langChips as lang (lang)}
           <button
             class="lane"
-            class:on={lanes.selectedKey === lane.key}
+            class:on={lanes.selectedKey === lang}
             role="tab"
-            aria-selected={lanes.selectedKey === lane.key}
-            onclick={() => (laneKey = lane.key)}
+            aria-selected={lanes.selectedKey === lang}
+            onclick={() => selectLang(lang)}
           >
-            {langFlag(lane.key)}
-            {langLabel(lane.key)}
-            <span class="count">{lane.chapters.length}</span>
+            {langFlag(lang)}
+            {langLabel(lang)}
           </button>
         {/each}
       </div>
     {/if}
-  </div>
-
-  {#if loading}
-    <p class="muted">Memuat bab…</p>
-  {:else if visible.length === 0 && !error}
-    <p class="muted">Belum ada bab untuk konten ini.</p>
-  {:else}
-    <ul class="rows">
+    <ul class="rows sheet-rows">
       {#each visible as ch (ch.id)}
         <li>
           <button class="row" onclick={() => openChapter(ch)}>
@@ -207,56 +427,17 @@
         </li>
       {/each}
     </ul>
-  {/if}
-
-  {#if related.length > 0}
-    <h2 class="section">Terkait</h2>
-    <div class="rail">
-      {#each related as item (item.id)}
-        <div class="rail-card">
-          <MainGridCard content={item} onselect={onselectcontent} />
-        </div>
-      {/each}
-    </div>
-  {/if}
-
-  {#if comments.length > 0}
-    <h2 class="section">Komentar ({comments.length})</h2>
-    <ul class="comments">
-      {#each comments as cm (cm.id)}
-        <li class="comment">
-          {#if cm.avatar_url}
-            <img
-              class="avatar"
-              src={cm.avatar_url}
-              alt=""
-              loading="lazy"
-              draggable="false"
-              referrerpolicy="no-referrer"
-            />
-          {:else}
-            <span class="avatar fallback">
-              {(cm.username || "?").slice(0, 1).toUpperCase()}
-            </span>
-          {/if}
-          <div class="cbody">
-            <div class="chead">
-              <strong>{cm.username || "anon"}</strong>
-              {#if fmtDate(cm.post_date)}
-                <span class="muted">{fmtDate(cm.post_date)}</span>
-              {/if}
-            </div>
-            <p>{cm.body}</p>
-          </div>
-        </li>
-      {/each}
-    </ul>
-  {/if}
-</section>
+  </div>
+{/if}
 
 <style>
   .detail {
     --ink-shadow: 5px 5px 0 rgb(0 0 0 / 0.35);
+    height: 100vh;
+    overflow-y: auto;
+    padding: 20px 28px 48px;
+    max-width: 1180px;
+    margin: 0 auto;
   }
   .muted {
     color: var(--muted-foreground);
@@ -274,8 +455,19 @@
     color: var(--foreground);
     cursor: pointer;
   }
-  .back {
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     margin-bottom: 4px;
+  }
+  .crumb {
+    font-family: "Komika", system-ui, sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--primary);
   }
   /* Motif khas Kuron Ink: titik halftone ala cetakan manga. */
   .halftone {
@@ -288,7 +480,7 @@
   .hero {
     display: flex;
     gap: 24px;
-    margin: 12px 0 28px;
+    margin: 12px 0 24px;
     padding: 24px;
     border: 1px solid var(--border);
     border-radius: 14px;
@@ -322,14 +514,6 @@
     justify-content: center;
     gap: 10px;
   }
-  .kicker {
-    margin: 0;
-    font-family: "Komika", system-ui, sans-serif;
-    font-size: 13px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--primary);
-  }
   .info h1 {
     margin: 0;
     font-family: "Bangers", "Komika", system-ui, sans-serif;
@@ -350,6 +534,10 @@
     border-radius: 999px;
     background: var(--muted);
     color: var(--muted-foreground);
+  }
+  .badge.hot {
+    background: color-mix(in srgb, var(--primary) 22%, var(--muted));
+    color: var(--primary);
   }
   .badge.chapters {
     background: var(--primary);
@@ -379,6 +567,23 @@
     opacity: 0.5;
     cursor: default;
     box-shadow: none;
+  }
+  /* Kolom ganda desktop: info kiri, rail bab kanan (sticky). */
+  .body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 24px;
+    align-items: start;
+  }
+  .chapters-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    position: sticky;
+    top: 20px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
   }
   .chapters-head {
     display: flex;
@@ -418,12 +623,6 @@
     border-color: var(--primary);
     color: var(--primary-foreground);
   }
-  .lane .count {
-    font-family: "Bangers", system-ui, sans-serif;
-    font-size: 15px;
-    letter-spacing: 0.06em;
-    opacity: 0.85;
-  }
   .rows {
     list-style: none;
     margin: 0;
@@ -444,6 +643,9 @@
     color: var(--foreground);
     cursor: pointer;
     text-align: left;
+  }
+  .chapters-card .row {
+    background: var(--background);
   }
   .row:hover {
     border-color: var(--primary);
@@ -474,11 +676,45 @@
     border-radius: 999px;
     padding: 3px 10px;
   }
+  .ghost.wide {
+    width: 100%;
+    margin-top: 12px;
+  }
+  .synopsis {
+    margin: 0 0 8px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--foreground);
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .tag-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .tag-group {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+  }
+  .tag-group-label {
+    flex-shrink: 0;
+    min-width: 74px;
+    font-family: "Komika", system-ui, sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--primary);
+  }
   .tags {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-bottom: 24px;
   }
   .tag {
     font-size: 12px;
@@ -495,14 +731,23 @@
     font-weight: 400;
     letter-spacing: 0.04em;
   }
+  .main-col > h2.section:first-child {
+    margin-top: 0;
+  }
   .rail {
     display: flex;
     gap: 14px;
     overflow-x: auto;
     padding-bottom: 8px;
   }
-  .rail-card {
+  .rail .related-card {
     flex: 0 0 160px;
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    background: transparent;
+    border: 0;
   }
   .comments {
     list-style: none;
@@ -555,5 +800,85 @@
     line-height: 1.5;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+  /* Sheet daftar penuh: panel kanan (desktop) / bottom sheet (sempit). */
+  .sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: rgb(0 0 0 / 0.55);
+  }
+  .sheet {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 71;
+    width: min(480px, 92vw);
+    background: var(--background);
+    border-left: 1px solid var(--border);
+    box-shadow: -12px 0 40px rgb(0 0 0 / 0.4);
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    gap: 14px;
+  }
+  .sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .sheet-head h2 {
+    margin: 0;
+    font-family: "Bangers", "Komika", system-ui, sans-serif;
+    font-size: 26px;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+  .sheet-rows {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+  }
+  /* Layar sempit: rail bab tepat di bawah hero, sheet dari bawah. */
+  @media (max-width: 900px) {
+    .detail {
+      padding: 14px 14px 40px;
+    }
+    .hero {
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .info {
+      align-items: center;
+    }
+    .badges,
+    .actions {
+      justify-content: center;
+    }
+    .body {
+      grid-template-columns: 1fr;
+    }
+    .rail-col {
+      order: -1;
+    }
+    .chapters-card {
+      position: static;
+      max-height: none;
+    }
+    .sheet {
+      top: auto;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: auto;
+      max-height: 82vh;
+      border-left: 0;
+      border-top: 1px solid var(--border);
+      border-radius: 16px 16px 0 0;
+      box-shadow: 0 -12px 40px rgb(0 0 0 / 0.4);
+    }
   }
 </style>

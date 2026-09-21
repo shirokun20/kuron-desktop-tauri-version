@@ -22,6 +22,19 @@ pub struct Content {
     /// Tag metadata (nhentai `tags[]`); kosong = sumber tak sediakan.
     #[serde(default)]
     pub tags: Vec<Tag>,
+    /// Bahasa terjemahan tersedia (MD `availableTranslatedLanguages`);
+    /// kosong = sumber tak sediakan. Chip bahasa baca dari sini (mobile).
+    #[serde(default)]
+    pub available_languages: Vec<String>,
+    /// Sinopsis (MD `description.en`); None = tak ada.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Skor rata-rata (MD `statistics.rating.average`); None = tak ada.
+    #[serde(default)]
+    pub rating: Option<f64>,
+    /// Jumlah favorit/pengikut (nh `num_favorites`, MD `statistics.follows`).
+    #[serde(default)]
+    pub favorites: Option<i64>,
 }
 
 impl Content {
@@ -38,6 +51,10 @@ impl Content {
                 page_count: None,
                 language: None,
                 tags: Vec::new(),
+                available_languages: Vec::new(),
+                description: None,
+                rating: None,
+                favorites: None,
             })
             .collect()
     }

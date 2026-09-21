@@ -17,7 +17,24 @@ language: string | null,
 /**
  * Tag metadata (nhentai `tags[]`); kosong = sumber tak sediakan.
  */
-tags: Array<Tag>, };
+tags: Array<Tag>, 
+/**
+ * Bahasa terjemahan tersedia (MD `availableTranslatedLanguages`);
+ * kosong = sumber tak sediakan. Chip bahasa baca dari sini (mobile).
+ */
+available_languages: Array<string>, 
+/**
+ * Sinopsis (MD `description.en`); None = tak ada.
+ */
+description: string | null, 
+/**
+ * Skor rata-rata (MD `statistics.rating.average`); None = tak ada.
+ */
+rating: number | null, 
+/**
+ * Jumlah favorit/pengikut (nh `num_favorites`, MD `statistics.follows`).
+ */
+favorites: bigint | null, };
 
 export type Chapter = { id: string, content_id: string, title: string, order: number, is_external: boolean, external_url: string | null, 
 /**
@@ -80,5 +97,5 @@ export type Comment = { id: string, username: string,
  */
 body: string, avatar_url: string | null, post_date: bigint | null, };
 
-export type Tag = { id: bigint, name: string, tag_type: string, count: bigint, };
+export type Tag = { id: string, name: string, tag_type: string, count: bigint, };
 

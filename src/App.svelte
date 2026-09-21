@@ -11,6 +11,8 @@
   import { contentStore } from "./lib/stores/content.svelte";
   import SplashScreen from "./lib/pages/SplashScreen.svelte";
   import MainPage from "./lib/pages/MainPage.svelte";
+  import DetailPage from "./lib/pages/DetailPage.svelte";
+  import ReaderPage from "./lib/pages/ReaderPage.svelte";
   import SourcePickerPage from "./lib/pages/SourcePickerPage.svelte";
   import AboutPage from "./lib/pages/AboutPage.svelte";
   import ExtensionManagerPage from "./lib/pages/ExtensionManagerPage.svelte";
@@ -57,6 +59,40 @@
   </svelte:boundary>
 {:else if routeStore.current === "splash"}
   <SplashScreen />
+{:else if routeStore.current === "detail" && routeStore.detailContent}
+  <svelte:boundary>
+    <DetailPage
+      content={routeStore.detailContent}
+      onback={() => routeStore.backToMain()}
+      onopenchapter={(ch, list) => routeStore.openReader(ch, list)}
+      onselectcontent={(c) => routeStore.openDetail(c)}
+    />
+    {#snippet failed(error)}
+      <main class="boot-err">
+        <h1>Gagal buka Detail</h1>
+        <p>{error instanceof Error ? error.message : String(error)}</p>
+        <p class="hint">Screenshot teks ini lalu kirim — biar akar masalah ketemu.</p>
+      </main>
+    {/snippet}
+  </svelte:boundary>
+{:else if routeStore.current === "reader" && routeStore.detailContent && routeStore.readerChapter}
+  <svelte:boundary>
+    <ReaderPage
+      content={routeStore.detailContent}
+      chapter={routeStore.readerChapter}
+      siblings={routeStore.readerList}
+      source={routeStore.detailContent.source_id}
+      onback={() => routeStore.backToDetail()}
+      onchapter={(ch) => routeStore.openReader(ch, routeStore.readerList)}
+    />
+    {#snippet failed(error)}
+      <main class="boot-err">
+        <h1>Gagal buka Reader</h1>
+        <p>{error instanceof Error ? error.message : String(error)}</p>
+        <p class="hint">Screenshot teks ini lalu kirim — biar akar masalah ketemu.</p>
+      </main>
+    {/snippet}
+  </svelte:boundary>
 {:else}
   <svelte:boundary>
     <MainPage />

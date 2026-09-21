@@ -48,10 +48,14 @@ impl ContentRepository for MockContentRepository {
             page_count: None,
             language: None,
             tags: Vec::new(),
+            available_languages: Vec::new(),
+            description: None,
+            rating: None,
+            favorites: None,
         })
     }
 
-    async fn get_chapters(&self, _content_id: &str) -> Result<Vec<Chapter>, AppError> {
+    async fn get_chapters(&self, _content_id: &str, _language: Option<&str>) -> Result<Vec<Chapter>, AppError> {
         Ok(vec![])
     }
 
@@ -217,7 +221,7 @@ impl ContentRepository for ContentRepositoryImpl {
         Ok(Content::from(model))
     }
 
-    async fn get_chapters(&self, content_id: &str) -> Result<Vec<Chapter>, AppError> {
+    async fn get_chapters(&self, content_id: &str, language: Option<&str>) -> Result<Vec<Chapter>, AppError> {
         if self.is_nhentai() {
             return Ok(vec![Chapter {
                 id: format!("{content_id}-1"),
@@ -230,7 +234,7 @@ impl ContentRepository for ContentRepositoryImpl {
             }]);
         }
         if self.is_mangadex() {
-            let chapters = self.rest.chapters_mangadex(content_id).await?;
+            let chapters = self.rest.chapters_mangadex(content_id, language).await?;
             return Ok(chapters);
         }
         let url = self.config.detail_url(content_id);
@@ -270,13 +274,17 @@ impl ContentRepository for ContentRepositoryImpl {
     }
 
     async fn get_related_content(&self, content_id: &str) -> Result<Vec<Content>, AppError> {
-        // Hanya nhentai yang punya endpoint `related` kini; sumber lain
-        // kosong jujur (mobile: per-sumber, MD tak ada API terkait).
-        if !self.is_nhentai() {
-            return Ok(vec![]);
+        // nhentai: endpoint `related`; MD: batch rekomendasi (mobile
+        // `_fetchRelatedBatch`); sumber lain kosong jujur.
+        if self.is_nhentai() {
+            let models = self.nh()?.related(content_id).await?;
+            return Ok(models.into_iter().map(Content::from).collect());
         }
-        let models = self.nh()?.related(content_id).await?;
-        Ok(models.into_iter().map(Content::from).collect())
+        if self.is_mangadex() {
+            let models = self.rest.related_mangadex(content_id).await?;
+            return Ok(models.into_iter().map(Content::from).collect());
+        }
+        Ok(vec![])
     }
 
     async fn get_comments(&self, content_id: &str) -> Result<Vec<Comment>, AppError> {

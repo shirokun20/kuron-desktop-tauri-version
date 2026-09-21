@@ -27,8 +27,11 @@
   let current = $state(1);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  /** Halaman yang gagal dimuat (1-based) — tiap tile bawa tombol reload. */
+  let failed = $state(new Set<number>());
   let lastRecord = 0;
   let listEl: HTMLElement | null = $state(null);
+  let rootEl: HTMLElement | null = $state(null);
   // Bab internal berurutan (eksternal dibuka di browser, bukan di sini).
   let readable = $derived(siblings.filter((c) => !c.is_external));
   let atIndex = $derived(readable.findIndex((c) => c.id === chapter.id));
@@ -63,9 +66,13 @@
     onchapter(ch);
   }
 
-  /** Scroller milik MainPage (`.main-col`): gulir ke atas tiap ganti bab. */
+  /** Route khusus = scroller milik sendiri: atas tiap ganti bab. */
   function scrollTop() {
-    document.querySelector(".main-col")?.scrollTo({ top: 0 });
+    rootEl?.scrollTo({ top: 0 });
+  }
+
+  function retryFailed() {
+    failed = new Set();
   }
 
   $effect(() => {
@@ -74,6 +81,7 @@
     loading = true;
     error = null;
     pages = [];
+    failed = new Set();
     current = 1;
     lastRecord = 0;
     scrollTop();
@@ -122,13 +130,18 @@
   });
 </script>
 
-<section class="reader">
+<section class="reader" bind:this={rootEl}>
   <header class="reader-head">
     <button class="ghost" onclick={goBack}>←</button>
     <div class="titles">
       <strong>{content.title}</strong>
       <span class="muted">{chapter.title || `Bab ${chapter.order}`}</span>
     </div>
+    {#if failed.size > 0}
+      <button class="ghost retry-all" onclick={retryFailed}>
+        ⟳ {failed.size} gagal
+      </button>
+    {/if}
     <div class="chapnav">
       <button
         class="ghost nav"
@@ -170,14 +183,34 @@
   <div class="pages" bind:this={listEl}>
     {#each pages as src, i (i)}
       <figure>
-        <img
-          src={src}
-          data-page={i + 1}
-          alt={`Halaman ${i + 1}`}
-          loading="lazy"
-          draggable="false"
-          referrerpolicy="no-referrer"
-        />
+        {#if failed.has(i + 1)}
+          <div class="page-fail" data-page={i + 1}>
+            <span class="fail-num">{i + 1}</span>
+            <p>Gagal muat halaman ini.</p>
+            <button
+              class="ghost"
+              onclick={() => {
+                failed.delete(i + 1);
+                failed = new Set(failed);
+              }}
+            >
+              ⟳ Muat ulang
+            </button>
+          </div>
+        {:else}
+          <img
+            src={src}
+            data-page={i + 1}
+            alt={`Halaman ${i + 1}`}
+            loading="lazy"
+            draggable="false"
+            referrerpolicy="no-referrer"
+            onerror={() => {
+              failed.add(i + 1);
+              failed = new Set(failed);
+            }}
+          />
+        {/if}
         <figcaption>{i + 1}</figcaption>
       </figure>
     {/each}
@@ -198,8 +231,8 @@
 <style>
   .reader {
     background: var(--kuron-reader-bg);
-    border: 1px solid var(--border);
-    border-radius: 14px;
+    height: 100vh;
+    overflow-y: auto;
     padding: 0 20px 24px;
   }
   .muted {
@@ -263,6 +296,37 @@
   .ghost:disabled {
     opacity: 0.4;
     cursor: default;
+  }
+  .retry-all {
+    border-color: var(--destructive);
+    color: var(--destructive);
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+  .page-fail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 280px;
+    border: 1px dashed var(--destructive);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--destructive) 7%, transparent);
+    padding: 28px 16px;
+    text-align: center;
+  }
+  .page-fail p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--muted-foreground);
+  }
+  .fail-num {
+    font-family: "Bangers", system-ui, sans-serif;
+    font-size: 44px;
+    line-height: 1;
+    color: var(--destructive);
+    opacity: 0.7;
   }
   .badge {
     font-family: "Bangers", system-ui, sans-serif;
