@@ -93,6 +93,7 @@ src/lib/
 
 ### Active Changes (in `openspec/changes/`)
 - `kuron-desktop-roadmap` — proposal + 13 spec + design + tasks (20/37 DONE: grup 1–3, 4.1–4.6)
+- `kuron-parity-1to1` — change turunan parity 1:1 mobile (proposal + 5 spec + design + tasks A–E, PLANNED; `openspec validate` valid 0 warning)
 
 ### Open Issues (tech debt tercatat, sadar)
 - `MockContentRepository` masih default AppState — wiring real (installed) pending 4.7/Fase 6
@@ -111,6 +112,7 @@ src/lib/
 
 | Date | Agent | Area | Status | Summary |
 |---|---|---|---|---|
+| 2026-09-21 | Muse | Parity 1:1 Propose | Done | Explore roadmap vs `kuron_architecture_for_rust.md` → gap besar (generic-depth, kuron_special 9 source, reader pipeline, download/offline). Keputusan user: change turunan + semua gap + adaptasi desktop wajar. Tulis `kuron-parity-1to1` (proposal+design+tasks A–E+5 spec: content-browse, kuron-special, reader, offline-download, parity-scope); 32 warning SHALL diperbaiki; `openspec validate` valid 0 warning. Install global `@fission-ai/openspec@1.13.1` (lokal project kosong). |
 | 2026-09-20 | Muse | OpenSpec sync | Done | Synced all 14 active `kuron-desktop-roadmap` delta specs into `openspec/specs/`; `openspec validate --specs` passed 14/14. |
 | 2026-09-20 | Muse | Extension URL inputs | Done | Manifest URL and ZIP URL inputs now start empty; manifest loading is user-triggered and validates a required URL before fetch/install. |
 | 2026-09-20 | Muse | Filter tag picker | Done | Quiet browser/native repro confirmed `mangaTags:77`; picker DOM renders 77 options and include/exclude cycling works. |
