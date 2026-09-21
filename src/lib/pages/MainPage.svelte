@@ -61,6 +61,7 @@
   // Rantai baca: kartu → detail → reader. Kembali = null berurutan.
   let selectedContent = $state<Content | null>(null);
   let readingChapter = $state<Chapter | null>(null);
+  let readingList = $state<Chapter[]>([]);
   // Desktop: `collapsed` = sidebar mini. Mobile (layar sempit): `drawerOpen`.
   let collapsed = $state(false);
   let drawerOpen = $state(false);
@@ -89,12 +90,14 @@
     // Pindah nav keluar dari rantai baca (detail/reader).
     selectedContent = null;
     readingChapter = null;
+    readingList = [];
     activeNav = id;
   }
 
   /** Kartu/baris diklik (feed, favorit, riwayat) → halaman detail. */
   function selectContent(c: Content) {
     readingChapter = null;
+    readingList = [];
     selectedContent = c;
   }
 
@@ -178,14 +181,20 @@
         <ReaderPage
           content={selectedContent}
           chapter={readingChapter}
+          siblings={readingList}
           source={selectedContent.source_id}
           onback={() => (readingChapter = null)}
+          onchapter={(ch) => (readingChapter = ch)}
         />
       {:else if selectedContent}
         <DetailPage
           content={selectedContent}
           onback={() => (selectedContent = null)}
-          onopenchapter={(ch) => (readingChapter = ch)}
+          onopenchapter={(ch, list) => {
+            readingList = list;
+            readingChapter = ch;
+          }}
+          onselectcontent={selectContent}
         />
       {:else if activeNav === "favorites" || activeNav === "history"}
         <LibraryPage tab={activeNav} onselect={selectContent} />

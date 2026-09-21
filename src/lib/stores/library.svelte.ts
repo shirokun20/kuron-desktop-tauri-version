@@ -59,10 +59,22 @@ class LibraryStore {
     }
   }
 
-  /** Catat posisi baca (dipakai reader/detail Fase 5; API siap kini). */
+  /** Catat posisi baca + upsert optimistik (daftar langsung segar). */
   async recordHistory(content: Content, position: number) {
     try {
       await api.historyRecord(content, position);
+      const entry: HistoryItem = {
+        content_id: content.id,
+        title: content.title,
+        cover_url: content.cover_url,
+        source_id: content.source_id,
+        position: BigInt(position),
+        updated_at: BigInt(Math.floor(Date.now() / 1000)),
+      };
+      this.history = [
+        entry,
+        ...this.history.filter((h) => h.content_id !== content.id),
+      ];
     } catch (e) {
       if (!(e instanceof Error && e.message === WEB_OFFLINE_MSG)) {
         this.error = `gagal catat riwayat: ${e}`;

@@ -13,7 +13,7 @@ use crate::{
         datasources::config::{encode_query, fill_url, SourceFile},
         models::ContentModel,
     },
-    domain::Chapter,
+    domain::{Chapter, Comment},
     network::HttpClientManager,
 };
 
@@ -978,6 +978,31 @@ fn nhentai_lang_of_ids(item: &serde_json::Value) -> Option<String> {
 }
 
 /// Bahasa NHentai dari tags detail (type=language, abaikan "translated").
+/// Parse `tags[]` detail nhentai → `Tag` (murni).
+/// Bentuk live: `{id, type, name, slug, url, count}` — toleran: entri
+/// tanpa nama dilewati, angka tak valid jadi 0 (ala fallback mobile).
+fn parse_nhentai_tags(v: &serde_json::Value) -> Vec<crate::domain::Tag> {
+    v.get("tags")
+        .and_then(|t| t.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|t| {
+                    Some(crate::domain::Tag {
+                        id: t.get("id").and_then(|n| n.as_i64()).unwrap_or(0),
+                        name: t.get("name")?.as_str()?.to_string(),
+                        tag_type: t
+                            .get("type")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("tag")
+                            .to_string(),
+                        count: t.get("count").and_then(|n| n.as_i64()).unwrap_or(0),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn nhentai_lang_of_tags(v: &serde_json::Value) -> Option<String> {
     let tags = v.get("tags")?.as_array()?;
     for t in tags {
@@ -1417,6 +1442,11 @@ impl GenericRestAdapter {
                 if !name.is_empty() {
                     title = format!("{title} — {name}");
                 }
+                let language = a
+                    .get("translatedLanguage")
+                    .and_then(|l| l.as_str())
+                    .filter(|l| !l.is_empty())
+                    .map(str::to_string);
                 Some(Chapter {
                     id: id.to_string(),
                     content_id: manga_id.to_string(),
@@ -1424,6 +1454,7 @@ impl GenericRestAdapter {
                     order: num.parse::<u32>().ok().unwrap_or(i as u32 + 1),
                     is_external: external.is_some(),
                     external_url: external,
+                    language,
                 })
             })
             .collect())
@@ -1519,6 +1550,7 @@ impl GenericRestAdapter {
                 upload_date,
                 page_count,
                 language,
+                tags: Vec::new(),
             });
         }
         Ok(out)
@@ -1623,6 +1655,7 @@ impl GenericScraperAdapter {
                 upload_date: None,
                 page_count,
                 language,
+                tags: Vec::new(),
             });
         }
         Ok(out)
@@ -1691,6 +1724,7 @@ impl GenericScraperAdapter {
             upload_date: None,
             page_count,
             language,
+            tags: Vec::new(),
         })
     }
 
@@ -1724,6 +1758,7 @@ impl GenericScraperAdapter {
                 order: 1,
                 is_external: false,
                 external_url: Some(config.absolutize(url)),
+                language: None,
             }]);
         }
         let doc = Html::parse_document(html);
@@ -1777,6 +1812,7 @@ impl GenericScraperAdapter {
                 order: 1,
                 is_external: false,
                 external_url: Some(config.absolutize(url)),
+                language: None,
             }]);
         }
         Ok(links
@@ -1793,6 +1829,9 @@ impl GenericScraperAdapter {
                 order: (i + 1) as u32,
                 is_external: false,
                 external_url: Some(config.absolutize(&href)),
+                // Scraper: bahasa per-bab tak diketahui (beda dengan MD
+                // `translatedLanguage`) → lane "unknown" ala mobile.
+                language: None,
             })
             .collect())
     }
@@ -1812,6 +1851,7 @@ impl GenericScraperAdapter {
                 order: 1,
                 is_external: false,
                 external_url: Some(url.to_string()),
+                language: None,
             }]);
         }
         let doc = Html::parse_document(html);
@@ -1839,6 +1879,7 @@ impl GenericScraperAdapter {
                 order: p + 1,
                 is_external: false,
                 external_url: Some(format!("{base}?p={p}")),
+                language: None,
             })
             .collect())
     }
@@ -2146,6 +2187,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn mangadex_chapters_carry_language_and_external_flag() {
+        // Murni: feed chapter 3 bahasa (1 eksternal) → grouping UI.
+        let body = r#"{"data": [
+            {"id": "ch-en", "attributes": {"chapter": "12", "volume": "2",
+                "title": "Storm", "translatedLanguage": "en", "externalUrl": null}},
+            {"id": "ch-id", "attributes": {"chapter": "12", "volume": null,
+                "title": "", "translatedLanguage": "id", "externalUrl": null}},
+            {"id": "ch-ext", "attributes": {"chapter": "13", "volume": null,
+                "title": "", "translatedLanguage": "en",
+                "externalUrl": "https://luar.example/baca"}}
+        ]}"#;
+        let items = GenericRestAdapter::parse_mangadex_chapters(body, "m1").unwrap();
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].language.as_deref(), Some("en"));
+        assert_eq!(items[0].title, "Vol. 2 · Chapter 12 — Storm");
+        assert!(!items[0].is_external);
+        assert_eq!(items[1].language.as_deref(), Some("id"));
+        assert_eq!(items[1].title, "Chapter 12");
+        assert!(items[2].is_external);
+        assert_eq!(
+            items[2].external_url.as_deref(),
+            Some("https://luar.example/baca")
+        );
+    }
+
     #[cfg(feature = "live-tests")]
     #[test]
     fn live_ehentai_cursor_pagination() {
@@ -2221,6 +2288,7 @@ pub struct NhentaiApiAdapter {
     all_tpl: String,
     tag_tpl: String,
     detail_tpl: String,
+    related_tpl: String,
     thumb_host: String,
     img_host: String,
     attempts: u32,
@@ -2266,6 +2334,7 @@ impl NhentaiApiAdapter {
                 "/api/v2/galleries/tagged?tag_id={tagId}&page={page}",
             ),
             detail_tpl: ep("galleryDetail", "/api/v2/galleries/{id}"),
+            related_tpl: ep("related", "/api/v2/galleries/{id}/related"),
             thumb_host: host("thumbnail", "https://t.nhentai.net"),
             img_host: host("image", "https://i.nhentai.net"),
             attempts,
@@ -2321,6 +2390,7 @@ impl NhentaiApiAdapter {
                 .get("num_pages")
                 .and_then(|v| v.as_u64().map(|n| n as u32)),
             language: nhentai_lang_of_ids(item),
+            tags: Vec::new(),
         })
     }
 
@@ -2421,7 +2491,76 @@ impl NhentaiApiAdapter {
                 .get("num_pages")
                 .and_then(|n| n.as_u64().map(|n| n as u32)),
             language: nhentai_lang_of_tags(&v),
+            tags: parse_nhentai_tags(&v),
         })
+    }
+
+    /// Galeri terkait (endpoint `related` config; live: `{result: [...]}`).
+    pub async fn related(&self, gallery_id: &str) -> Result<Vec<ContentModel>, AppError> {
+        let url = crate::data::datasources::config::fill_url(
+            &self.related_tpl.clone(),
+            &[("id", gallery_id)],
+        );
+        let v = self.fetch(&url).await?;
+        Ok(Self::items_of(&v)
+            .iter()
+            .filter_map(|item| self.to_model(item))
+            .collect())
+    }
+
+    /// Komentar galeri — embedded di respons detail `?include=comments`
+    /// (live: top-level `comments: [...]`), tanpa endpoint terpisah.
+    pub async fn comments(&self, gallery_id: &str) -> Result<Vec<Comment>, AppError> {
+        let url = crate::data::datasources::config::fill_url(
+            &self.detail_tpl.clone(),
+            &[("id", gallery_id)],
+        );
+        let v = self.fetch(&url).await?;
+        Ok(Self::parse_comments(&v))
+    }
+
+    /// Parse `comments[]` → `Comment` (murni). Bentuk per mobile
+    /// `NhentaiComment`: `{id, gallery_id, poster{username, avatar_url},
+    /// body, post_date}` — toleran: kunci hilang = default mobile.
+    fn parse_comments(v: &serde_json::Value) -> Vec<Comment> {
+        v.get("comments")
+            .and_then(|c| c.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|c| {
+                        let num_id = |k: &str| {
+                            c.get(k).and_then(|n| {
+                                n.as_u64()
+                                    .map(|n| n.to_string())
+                                    .or_else(|| n.as_str().map(str::to_string))
+                            })
+                        };
+                        let poster = c.get("poster");
+                        let str_of = |k: &str| {
+                            poster
+                                .and_then(|p| p.get(k))
+                                .and_then(|s| s.as_str())
+                                .unwrap_or("")
+                                .to_string()
+                        };
+                        Comment {
+                            id: num_id("id").unwrap_or_else(|| "0".to_string()),
+                            username: str_of("username"),
+                            body: c
+                                .get("body")
+                                .and_then(|b| b.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            avatar_url: Some(str_of("avatar_url"))
+                                .filter(|u| !u.is_empty()),
+                            post_date: c
+                                .get("post_date")
+                                .and_then(|n| n.as_i64().or_else(|| n.as_u64().map(|n| n as i64))),
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// URL gambar penuh satu galeri (untuk reader).
@@ -2445,9 +2584,20 @@ impl NhentaiApiAdapter {
             .unwrap_or_default())
     }
 
-    /// Chapter id `"{gallery}-1"` → gallery id.
+    /// Chapter id `"{gallery}-1"` → gallery id. Terima pula URL penuh
+    /// `.../g/{gallery}/` karena frontend mengirim `external_url` (kontrak
+    /// umum bab) — digitnya diekstrak agar tak masuk `{id}` mentah (404).
     pub fn gallery_of_chapter(chapter_id: &str) -> &str {
-        chapter_id.strip_suffix("-1").unwrap_or(chapter_id)
+        let bare = chapter_id.strip_suffix("-1").unwrap_or(chapter_id);
+        if let Some((_, rest)) = bare.split_once("/g/") {
+            let end = rest
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(rest.len());
+            if end > 0 {
+                return &rest[..end];
+            }
+        }
+        bare
     }
 }
 
@@ -2682,6 +2832,12 @@ mod nhentai_tests {
         assert_eq!(normalize_lang("Japanese").as_deref(), Some("ja"));
         assert!(normalize_lang("").is_none());
         assert_eq!(NhentaiApiAdapter::gallery_of_chapter("462098-1"), "462098");
+        // Regresi kasus user: `external_url` penuh → id numerik murni.
+        assert_eq!(
+            NhentaiApiAdapter::gallery_of_chapter("https://nhentai.net/g/682821/"),
+            "682821"
+        );
+        assert_eq!(NhentaiApiAdapter::gallery_of_chapter("682821"), "682821");
         // Detail diparse dari bentuk live (tanpa network).
         let d: serde_json::Value = serde_json::from_str(DETAIL_JSON).unwrap();
         assert_eq!(d.get("title").unwrap().get("pretty").unwrap(), "Judul Rapi");
@@ -2699,6 +2855,89 @@ mod nhentai_tests {
             })
             .collect();
         assert_eq!(pages.len(), 2);
+    }
+
+    #[test]
+    fn nhentai_related_parses_live_shaped_result() {
+        // Murni: `{result: [...]}` bentuk live (id numerik, judul datar).
+        let cfg: SourceFile = serde_json::from_str(
+            r#"{"source": "nhentai", "api": {"apiBase": "https://nhentai.net"},
+                "assetHosts": {"image": "https://i.nhentai.net", "thumbnail": "https://t.nhentai.net"}}"#,
+        )
+        .unwrap();
+        let a = NhentaiApiAdapter::from_config(
+            HttpClientManager::without_proxy().unwrap(),
+            &cfg,
+        );
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{"result": [
+                {"id": 508415, "english_title": "Terkait Satu",
+                 "thumbnail": "galleries/1/thumb.webp", "num_pages": 20},
+                {"id": 999, "english_title": "", "thumbnail": "", "num_pages": null}
+            ]}"#,
+        )
+        .unwrap();
+        let items: Vec<_> = NhentaiApiAdapter::items_of(&v)
+            .iter()
+            .filter_map(|item| a.to_model(item))
+            .collect();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].id, "508415");
+        assert_eq!(items[0].title, "Terkait Satu");
+        assert_eq!(
+            items[0].cover_url,
+            "https://t.nhentai.net/galleries/1/thumb.webp"
+        );
+        assert_eq!(items[0].page_count, Some(20));
+        assert_eq!(items[1].title, "");
+    }
+
+    #[test]
+    fn nhentai_comments_parse_mobile_shaped_items() {
+        // Murni: `comments[]` embedded (bentuk model mobile NhentaiComment).
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{"comments": [
+                {"id": 7, "gallery_id": 682821,
+                 "poster": {"username": "suke", "avatar_url": "https://a.example/u.png"},
+                 "body": "mantap!", "post_date": 1700000000},
+                {"id": 8}
+            ]}"#,
+        )
+        .unwrap();
+        let out = NhentaiApiAdapter::parse_comments(&v);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].id, "7");
+        assert_eq!(out[0].username, "suke");
+        assert_eq!(out[0].body, "mantap!");
+        assert_eq!(
+            out[0].avatar_url.as_deref(),
+            Some("https://a.example/u.png")
+        );
+        assert_eq!(out[0].post_date, Some(1_700_000_000));
+        // Entri jarang: default mobile (username/body kosong).
+        assert_eq!(out[1].id, "8");
+        assert_eq!(out[1].username, "");
+        assert!(out[1].avatar_url.is_none());
+    }
+
+    #[test]
+    fn nhentai_tags_parse_live_shaped() {
+        // Murni: `tags[]` bentuk live (kasus galeri 682821).
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{"tags": [
+                {"id": 33172, "type": "category", "name": "doujinshi",
+                 "slug": "doujinshi", "url": "/category/doujinshi/", "count": 508869},
+                {"id": 5, "type": "language", "name": "chinese", "count": 1},
+                {"id": 6}
+            ]}"#,
+        )
+        .unwrap();
+        let tags = parse_nhentai_tags(&v);
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags[0].name, "doujinshi");
+        assert_eq!(tags[0].tag_type, "category");
+        assert_eq!(tags[0].count, 508869);
+        assert_eq!(tags[1].name, "chinese");
     }
 
     #[test]

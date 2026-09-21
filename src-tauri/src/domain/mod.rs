@@ -11,6 +11,7 @@ pub mod value_objects;
 pub use entities::{
     ai_translation::{BubbleBox, PageTranslation},
     chapter::Chapter,
+    comment::Comment,
     content::Content,
     download_task::{DownloadState, DownloadTask},
     glossary::GlossaryEntry,
@@ -19,6 +20,7 @@ pub use entities::{
     page_image_result::PageImageResult,
     reader_settings::{ReaderSettings, ReadingMode},
     search_filter::SearchFilter,
+    tag::Tag,
 };
 pub use value_objects::{language::Language, source_id::SourceId};
 
@@ -51,6 +53,19 @@ mod roundtrip_tests {
             position: 9,
             updated_at: 1_700_000_000,
         });
+        assert_roundtrip(&Tag {
+            id: 33172,
+            name: "doujinshi".into(),
+            tag_type: "category".into(),
+            count: 508869,
+        });
+        assert_roundtrip(&Comment {
+            id: "c9".into(),
+            username: "anon".into(),
+            body: "bagus!".into(),
+            avatar_url: None,
+            post_date: Some(1_700_000_000),
+        });
         assert_roundtrip(&Chapter {
             id: "c1".into(),
             content_id: "m1".into(),
@@ -58,6 +73,7 @@ mod roundtrip_tests {
             order: 1,
             is_external: true,
             external_url: Some("https://ex.example/1".into()),
+            language: Some("en".into()),
         });
     }
 

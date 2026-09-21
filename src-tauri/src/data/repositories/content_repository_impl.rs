@@ -15,7 +15,7 @@ use crate::{
     },
     domain::{
         repositories::{ContentRepository, HomeFeedRepository},
-        Chapter, Content, PageImageResult, SearchFilter,
+        Chapter, Comment, Content, PageImageResult, SearchFilter,
     },
 };
 
@@ -47,6 +47,7 @@ impl ContentRepository for MockContentRepository {
             is_favorite: false,
             page_count: None,
             language: None,
+            tags: Vec::new(),
         })
     }
 
@@ -55,6 +56,14 @@ impl ContentRepository for MockContentRepository {
     }
 
     async fn get_page_images(&self, _chapter_id: &str) -> Result<Vec<PageImageResult>, AppError> {
+        Ok(vec![])
+    }
+
+    async fn get_related_content(&self, _content_id: &str) -> Result<Vec<Content>, AppError> {
+        Ok(vec![])
+    }
+
+    async fn get_comments(&self, _content_id: &str) -> Result<Vec<Comment>, AppError> {
         Ok(vec![])
     }
 }
@@ -217,6 +226,7 @@ impl ContentRepository for ContentRepositoryImpl {
                 order: 1,
                 is_external: false,
                 external_url: Some(format!("https://nhentai.net/g/{content_id}/")),
+                language: None,
             }]);
         }
         if self.is_mangadex() {
@@ -257,5 +267,23 @@ impl ContentRepository for ContentRepositoryImpl {
             .fetch_page_images(&self.config.detail_url(chapter_id), &self.config)
             .await?;
         Ok(urls.into_iter().map(PageImageResult::Remote).collect())
+    }
+
+    async fn get_related_content(&self, content_id: &str) -> Result<Vec<Content>, AppError> {
+        // Hanya nhentai yang punya endpoint `related` kini; sumber lain
+        // kosong jujur (mobile: per-sumber, MD tak ada API terkait).
+        if !self.is_nhentai() {
+            return Ok(vec![]);
+        }
+        let models = self.nh()?.related(content_id).await?;
+        Ok(models.into_iter().map(Content::from).collect())
+    }
+
+    async fn get_comments(&self, content_id: &str) -> Result<Vec<Comment>, AppError> {
+        // Hanya nhentai (`?include=comments` embedded); sumber lain kosong.
+        if !self.is_nhentai() {
+            return Ok(vec![]);
+        }
+        self.nh()?.comments(content_id).await
     }
 }

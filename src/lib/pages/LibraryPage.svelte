@@ -22,6 +22,7 @@
       is_favorite: false,
       page_count: null,
       language: null,
+      tags: [],
     };
   }
 

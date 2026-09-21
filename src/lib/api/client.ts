@@ -3,6 +3,7 @@ import { isTauriRuntime } from "./platform";
 import type {
   AppInfo,
   Chapter,
+  Comment,
   Content,
   ExtensionManifest,
   Hello,
@@ -57,6 +58,10 @@ export const api = {
     call("cmd_get_chapters", { contentId, source: source ?? null }),
   pageImages: (chapterId: string, source?: string): Promise<PageImageResult[]> =>
     call("cmd_get_page_images", { chapterId, source: source ?? null }),
+  related: (contentId: string, source?: string): Promise<Content[]> =>
+    call("cmd_get_related", { contentId, source: source ?? null }),
+  comments: (contentId: string, source?: string): Promise<Comment[]> =>
+    call("cmd_get_comments", { contentId, source: source ?? null }),
   // Web: daftar kosong (Sidebar tetap menampilkan sumber tersimpan user).
   sourcesList: (): Promise<InstalledSource[]> =>
     isTauriRuntime() ? invoke("cmd_sources_list") : Promise.resolve([]),

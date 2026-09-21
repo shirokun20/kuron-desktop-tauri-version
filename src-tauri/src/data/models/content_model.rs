@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::domain::Content;
+use crate::domain::{Content, Tag};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentModel {
@@ -16,6 +16,9 @@ pub struct ContentModel {
     pub page_count: Option<u32>,
     #[serde(default)]
     pub language: Option<String>,
+    /// Tag metadata (detail nhentai); kosong bila sumber tak sediakan.
+    #[serde(default)]
+    pub tags: Vec<Tag>,
 }
 
 impl From<ContentModel> for Content {
@@ -29,6 +32,7 @@ impl From<ContentModel> for Content {
             is_favorite: false,
             page_count: m.page_count,
             language: m.language,
+            tags: m.tags,
         }
     }
 }
@@ -43,6 +47,7 @@ impl From<Content> for ContentModel {
             upload_date: e.upload_date,
             page_count: e.page_count,
             language: e.language,
+            tags: e.tags,
         }
     }
 }

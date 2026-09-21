@@ -7,8 +7,8 @@ pub mod hello_commands;
 pub mod library_commands;
 
 pub use content_commands::{
-    cmd_get_chapters, cmd_get_detail, cmd_get_page_images, cmd_home_feed, cmd_search,
-    cmd_search_form, cmd_tag_query,
+    cmd_get_chapters, cmd_get_comments, cmd_get_detail, cmd_get_page_images, cmd_get_related,
+    cmd_home_feed, cmd_search, cmd_search_form, cmd_tag_query,
 };
 pub use library_commands::{
     cmd_favorite_list, cmd_favorite_set, cmd_history_clear, cmd_history_list,

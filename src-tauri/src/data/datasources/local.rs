@@ -140,6 +140,7 @@ impl SqliteDs {
                     is_favorite: row.get::<_, i32>(5)? != 0,
                     page_count: None,
                     language: None,
+                    tags: Vec::new(),
                 })
             },
         )
@@ -220,6 +221,7 @@ impl SqliteDs {
                     is_favorite: row.get::<_, i32>(5)? != 0,
                     page_count: None,
                     language: None,
+                    tags: Vec::new(),
                 },
                 row.get::<_, i64>(6)?,
                 row.get::<_, i64>(7)?,
@@ -304,6 +306,7 @@ impl SqliteDs {
                 is_favorite: true,
                 page_count: None,
                 language: None,
+                tags: Vec::new(),
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
@@ -654,6 +657,7 @@ mod tests {
             is_favorite: false,
             page_count: None,
             language: None,
+            tags: Vec::new(),
         }
     }
 
@@ -673,6 +677,7 @@ mod tests {
             order: 1,
             is_external: false,
             external_url: None,
+            language: None,
         }])
         .unwrap();
         // history (+ snapshot display untuk daftar UI)

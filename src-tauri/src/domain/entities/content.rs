@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::tag::Tag;
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct Content {
     pub id: String,
@@ -17,6 +19,9 @@ pub struct Content {
     /// Kode bahasa ISO (en/ja/zh/id); None = tak diketahui.
     #[serde(default)]
     pub language: Option<String>,
+    /// Tag metadata (nhentai `tags[]`); kosong = sumber tak sediakan.
+    #[serde(default)]
+    pub tags: Vec<Tag>,
 }
 
 impl Content {
@@ -32,6 +37,7 @@ impl Content {
                 is_favorite: false,
                 page_count: None,
                 language: None,
+                tags: Vec::new(),
             })
             .collect()
     }

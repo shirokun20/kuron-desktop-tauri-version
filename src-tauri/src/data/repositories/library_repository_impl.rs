@@ -95,6 +95,7 @@ mod tests {
             is_favorite: false,
             page_count: None,
             language: None,
+            tags: Vec::new(),
         }
     }
 

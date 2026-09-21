@@ -13,9 +13,18 @@ page_count: number | null,
 /**
  * Kode bahasa ISO (en/ja/zh/id); None = tak diketahui.
  */
-language: string | null, };
+language: string | null, 
+/**
+ * Tag metadata (nhentai `tags[]`); kosong = sumber tak sediakan.
+ */
+tags: Array<Tag>, };
 
-export type Chapter = { id: string, content_id: string, title: string, order: number, is_external: boolean, external_url: string | null, };
+export type Chapter = { id: string, content_id: string, title: string, order: number, is_external: boolean, external_url: string | null, 
+/**
+ * Kode bahasa terjemahan (MangaDex `translatedLanguage`, mis. "en");
+ * None = tak diketahui (scraper) → lane "unknown" ala mobile.
+ */
+language: string | null, };
 
 export type PageImageResult = { "kind": "Cached", "value": string } | { "kind": "Remote", "value": string };
 
@@ -64,4 +73,12 @@ position: bigint,
  * Terakhir dilihat, unix epoch detik (ala `History.lastViewed`).
  */
 updated_at: bigint, };
+
+export type Comment = { id: string, username: string, 
+/**
+ * Isi mentah (bisa HTML ala mobile) — UI render sebagai TEKS.
+ */
+body: string, avatar_url: string | null, post_date: bigint | null, };
+
+export type Tag = { id: bigint, name: string, tag_type: string, count: bigint, };
 

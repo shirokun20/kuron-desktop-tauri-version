@@ -11,9 +11,9 @@ use crate::{
         ExtensionManifest, ManifestEntry, ManifestMeta, ZipPreview, ZipSourceCandidate,
     },
     domain::{
-        BubbleBox, Chapter, Content, DownloadState, DownloadTask, GlossaryEntry, Hello,
+        BubbleBox, Chapter, Comment, Content, DownloadState, DownloadTask, GlossaryEntry, Hello,
         HistoryItem, Language, PageImageResult, PageTranslation, ReaderSettings, ReadingMode,
-        SearchFilter, SourceId,
+        SearchFilter, SourceId, Tag,
     },
 };
 
@@ -43,6 +43,8 @@ fn export_types_ts() {
         ZipSourceCandidate::decl(&cfg),
         ZipPreview::decl(&cfg),
         HistoryItem::decl(&cfg),
+        Comment::decl(&cfg),
+        Tag::decl(&cfg),
     ];
 
     let mut out = String::from(
@@ -65,4 +67,6 @@ fn export_types_ts() {
     assert!(out.contains("type ZipPreview ="));
     assert!(out.contains("type ZipSourceCandidate ="));
     assert!(out.contains("type HistoryItem ="));
+    assert!(out.contains("type Comment ="));
+    assert!(out.contains("type Tag ="));
 }

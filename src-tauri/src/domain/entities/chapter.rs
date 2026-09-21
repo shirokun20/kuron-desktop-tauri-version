@@ -12,4 +12,8 @@ pub struct Chapter {
     pub order: u32,
     pub is_external: bool,
     pub external_url: Option<String>,
+    /// Kode bahasa terjemahan (MangaDex `translatedLanguage`, mis. "en");
+    /// None = tak diketahui (scraper) → lane "unknown" ala mobile.
+    #[serde(default)]
+    pub language: Option<String>,
 }

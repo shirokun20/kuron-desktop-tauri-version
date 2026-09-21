@@ -6,11 +6,11 @@ use tauri::State;
 
 use crate::{
     application::{
-        GetChaptersUseCase, GetContentDetailUseCase, GetHomeFeedUseCase, GetPageImagesUseCase,
-        SearchContentUseCase,
+        GetChaptersUseCase, GetCommentsUseCase, GetContentDetailUseCase, GetHomeFeedUseCase,
+        GetPageImagesUseCase, GetRelatedContentUseCase, SearchContentUseCase,
     },
     core::AppState,
-    domain::{Chapter, Content, PageImageResult, SearchFilter},
+    domain::{Chapter, Comment, Content, PageImageResult, SearchFilter},
 };
 
 #[tauri::command]
@@ -385,6 +385,44 @@ pub async fn cmd_get_page_images(
     };
     GetPageImagesUseCase::new(repo)
         .execute(&chapter_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn cmd_get_related(
+    state: State<'_, AppState>,
+    content_id: String,
+    source: Option<String>,
+) -> Result<Vec<Content>, String> {
+    // Ikut sumber aktif seperti search/home_feed.
+    let repo = match source.as_deref() {
+        Some(id) if !id.is_empty() && id != "semua" => state
+            .repo_for(&id.to_lowercase())
+            .map_err(|e| e.to_string())?,
+        _ => state.content_repo.clone(),
+    };
+    GetRelatedContentUseCase::new(repo)
+        .execute(&content_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn cmd_get_comments(
+    state: State<'_, AppState>,
+    content_id: String,
+    source: Option<String>,
+) -> Result<Vec<Comment>, String> {
+    // Ikut sumber aktif seperti search/home_feed.
+    let repo = match source.as_deref() {
+        Some(id) if !id.is_empty() && id != "semua" => state
+            .repo_for(&id.to_lowercase())
+            .map_err(|e| e.to_string())?,
+        _ => state.content_repo.clone(),
+    };
+    GetCommentsUseCase::new(repo)
+        .execute(&content_id)
         .await
         .map_err(|e| e.to_string())
 }

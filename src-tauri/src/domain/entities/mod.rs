@@ -1,5 +1,6 @@
 pub mod ai_translation;
 pub mod chapter;
+pub mod comment;
 pub mod content;
 pub mod download_task;
 pub mod glossary;
@@ -8,3 +9,4 @@ pub mod history_item;
 pub mod page_image_result;
 pub mod reader_settings;
 pub mod search_filter;
+pub mod tag;
