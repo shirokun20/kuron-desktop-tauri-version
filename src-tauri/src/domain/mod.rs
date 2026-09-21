@@ -15,6 +15,7 @@ pub use entities::{
     download_task::{DownloadState, DownloadTask},
     glossary::GlossaryEntry,
     hello::Hello,
+    history_entry::HistoryEntry,
     page_image_result::PageImageResult,
     reader_settings::{ReaderSettings, ReadingMode},
     search_filter::SearchFilter,
@@ -42,6 +43,11 @@ mod roundtrip_tests {
         for c in Content::mock_feed() {
             assert_roundtrip(&c);
         }
+        assert_roundtrip(&HistoryEntry {
+            content_id: "m1".into(),
+            position: 9,
+            updated_at: 1_700_000_000,
+        });
         assert_roundtrip(&Chapter {
             id: "c1".into(),
             content_id: "m1".into(),

@@ -114,7 +114,12 @@ pub struct ExtensionManifest {
 impl ExtensionManifest {
     pub fn fetch(http: &HttpClientManager, manifest_url: &str) -> Result<Self, AppError> {
         let body = tauri::async_runtime::block_on(http.get(manifest_url, "manifest"))?;
-        serde_json::from_str(&body)
+        Self::parse(&body, manifest_url)
+    }
+
+    /// Parse body manifest (murni, tanpa network).
+    pub fn parse(body: &str, manifest_url: &str) -> Result<Self, AppError> {
+        serde_json::from_str(body)
             .map_err(|e| AppError::Network(format!("manifest {manifest_url}: {e}")))
     }
 
@@ -158,15 +163,31 @@ impl<'a> ExtensionManager<'a> {
         manifest_url: &str,
         entry: &ManifestEntry,
     ) -> Result<SourceFile, AppError> {
-        if !is_safe_component(&entry.id) {
-            return Err(AppError::Validation(format!(
-                "id ekstensi buruk: {}",
-                entry.id
-            )));
-        }
+        Self::validate_id(&entry.id)?;
         let url = ExtensionManifest::resolve_url(manifest_url, &entry.url);
         let body = tauri::async_runtime::block_on(self.http.get(&url, &entry.id))?;
+        self.install_body(manifest_url, entry, &body)
+    }
+
+    fn validate_id(id: &str) -> Result<(), AppError> {
+        if !is_safe_component(id) {
+            return Err(AppError::Validation(format!("id ekstensi buruk: {id}")));
+        }
+        Ok(())
+    }
+
+    /// Verifikasi + simpan body config yang sudah diunduh (tanpa network):
+    /// cek sha256 → parse valid → tulis config + meta ikon.
+    /// Dipakai `install` setelah fetch; test memakai langsung dengan fixture.
+    pub fn install_body(
+        &self,
+        manifest_url: &str,
+        entry: &ManifestEntry,
+        body: &str,
+    ) -> Result<SourceFile, AppError> {
+        Self::validate_id(&entry.id)?;
         if body.is_empty() {
+            let url = ExtensionManifest::resolve_url(manifest_url, &entry.url);
             return Err(AppError::Network(format!("config kosong: {url}")));
         }
         if !entry.checksum.is_empty() {
@@ -400,11 +421,7 @@ impl<'a> ExtensionManager<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        io::{Read, Write},
-        net::TcpListener,
-        thread,
-    };
+    use std::io::Write;
 
     const MANIFEST_JSON: &str = r#"{"schemaVersion": 2, "installableSources": [
         {"id": "tes", "version": "1.0.0", "url": "config/tes-config.json",
@@ -416,6 +433,9 @@ mod tests {
         "api": {"enabled": true, "apiBase": "https://tes.example",
                 "endpoints": {"search": "/s?q={query}"}}}"#;
 
+    /// Base manifest fiktif (tanpa socket): resolve_url murni string.
+    const MANIFEST_URL: &str = "https://repo.example/manifest.json";
+
     fn tmpdir(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("kuron-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -423,55 +443,23 @@ mod tests {
         dir
     }
 
-    /// Server fixture: `/manifest.json` + `/config/tes-config.json`.
-    fn spawn_repo() -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap().to_string();
-        thread::spawn(move || {
-            for stream in listener.incoming().take(8) {
-                let mut stream = stream.unwrap();
-                let mut buf = [0u8; 2048];
-                let len = stream.read(&mut buf).unwrap_or(0);
-                let req = String::from_utf8_lossy(&buf[..len]).to_string();
-                let path = req
-                    .lines()
-                    .next()
-                    .and_then(|l| l.split_whitespace().nth(1))
-                    .unwrap_or("/");
-                let checksum = sha256_hex(CONFIG_JSON.as_bytes());
-                let body = if path.ends_with("manifest.json") {
-                    MANIFEST_JSON.replace("__CHECKSUM__", &checksum)
-                } else {
-                    CONFIG_JSON.to_string()
-                };
-                let res = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                stream.write_all(res.as_bytes()).unwrap();
-            }
-        });
-        format!("http://{addr}")
-    }
-
     #[test]
     fn install_verifies_checksum_and_caches() {
-        let base = spawn_repo();
-        let http = HttpClientManager::without_proxy().unwrap();
-        let manifest_url = format!("{base}/manifest.json");
-        let manifest = ExtensionManifest::fetch(&http, &manifest_url).unwrap();
+        // Murni: parse manifest + install body fixture (tanpa socket lokal).
+        let body = MANIFEST_JSON.replace("__CHECKSUM__", &sha256_hex(CONFIG_JSON.as_bytes()));
+        let manifest = ExtensionManifest::parse(&body, MANIFEST_URL).unwrap();
         assert_eq!(manifest.installable_sources.len(), 1);
         let entry = &manifest.installable_sources[0];
         assert_eq!(
-            ExtensionManifest::resolve_url(&manifest_url, &entry.url),
-            format!("{base}/config/tes-config.json")
+            ExtensionManifest::resolve_url(MANIFEST_URL, &entry.url),
+            "https://repo.example/config/tes-config.json"
         );
 
+        let http = HttpClientManager::without_proxy().unwrap();
         let dir = tmpdir("ext");
         let mgr = ExtensionManager::new(&http, &dir).unwrap();
         assert!(mgr.installed_ids().is_empty());
-        let cfg = mgr.install(&manifest_url, entry).unwrap();
+        let cfg = mgr.install_body(MANIFEST_URL, entry, CONFIG_JSON).unwrap();
         assert_eq!(cfg.source, "tes");
         assert_eq!(mgr.installed_ids(), vec!["tes".to_string()]);
         let loaded = mgr.load_installed().unwrap();
@@ -480,7 +468,7 @@ mod tests {
         // Checksum salah ditolak, file lama utuh.
         let mut bad = entry.clone();
         bad.checksum = "00".repeat(32);
-        assert!(mgr.install(&manifest_url, &bad).is_err());
+        assert!(mgr.install_body(MANIFEST_URL, &bad, CONFIG_JSON).is_err());
         assert!(mgr.load_installed().unwrap().get("tes").is_some());
 
         // Uninstall bersih.
@@ -596,8 +584,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[cfg(feature = "live-tests")]
     #[test]
-    #[ignore = "hits live kuron-extensions; jalankan manual: cargo test live_manifest_install -- --ignored"]
     fn live_manifest_install_roundtrip() {
         let http = HttpClientManager::new().unwrap();
         let manifest = ExtensionManifest::fetch(&http, DEFAULT_MANIFEST_URL).unwrap();

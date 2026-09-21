@@ -1,6 +1,12 @@
+pub mod clear_history;
+pub mod clear_library;
 pub mod get_chapters;
 pub mod get_content_detail;
 pub mod get_home_feed;
 pub mod get_page_images;
+pub mod list_favorites;
+pub mod list_history;
+pub mod record_history;
 pub mod say_hello;
 pub mod search_content;
+pub mod set_favorite;

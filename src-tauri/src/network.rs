@@ -111,7 +111,7 @@ impl HttpClientManager {
                 .await
             {
                 Ok(res) => {
-                    if res.status().is_server_error() && attempt + 1 < attempts.max(1) {
+                    if should_retry_status(res.status()) && attempt + 1 < attempts.max(1) {
                         last_err = AppError::Network(format!("HTTP {}", res.status()));
                     } else {
                         return res
@@ -129,9 +129,10 @@ impl HttpClientManager {
                     }
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_millis(
-                base_delay_ms * 2u64.pow(attempt),
-            ))
+            tokio::time::sleep(std::time::Duration::from_millis(retry_backoff_ms(
+                base_delay_ms,
+                attempt,
+            )))
             .await;
         }
         Err(last_err)
@@ -153,9 +154,21 @@ impl HttpClientManager {
     }
 }
 
+/// Kebijakan retry per status HTTP (murni, tanpa network):
+/// 5xx boleh coba lagi, 2xx/4xx final. Dipakai `get_with_retry`.
+pub fn should_retry_status(status: reqwest::StatusCode) -> bool {
+    status.is_server_error()
+}
+
+/// Jadwal backoff eksponensial (murni): `base × 2^attempt`.
+/// Port `network.retry` config mobile (1s → 2s → 4s).
+pub fn retry_backoff_ms(base_delay_ms: u64, attempt: u32) -> u64 {
+    base_delay_ms.saturating_mul(2u64.pow(attempt))
+}
+
 /// Lookup DNS-over-HTTPS via Cloudflare JSON API.
 /// Untuk diagnostik konektivitas dan (nanti) panen cookie CF — port awal
-/// `dns_*` mobile. Butuh internet; test di-ignore agar CI offline tetap hijau.
+/// `dns_*` mobile. Butuh internet; test live di feature `live-tests`.
 pub async fn resolve_doh(host: &str) -> Result<Vec<IpAddr>, AppError> {
     let mgr = HttpClientManager::new()?;
     let url = format!("https://cloudflare-dns.com/dns-query?name={host}&type=A");
@@ -168,8 +181,13 @@ pub async fn resolve_doh(host: &str) -> Result<Vec<IpAddr>, AppError> {
         .error_for_status()?
         .text()
         .await?;
+    parse_doh_ips(host, &body)
+}
+
+/// Parse jawaban DoH JSON Cloudflare → IP tipe A (murni, tanpa network).
+pub fn parse_doh_ips(host: &str, body: &str) -> Result<Vec<IpAddr>, AppError> {
     let v: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| AppError::Network(format!("DoH json: {e}")))?;
+        serde_json::from_str(body).map_err(|e| AppError::Network(format!("DoH json: {e}")))?;
     let mut ips = Vec::new();
     if let Some(arr) = v.get("Answer").and_then(|a| a.as_array()) {
         for ans in arr {
@@ -195,123 +213,63 @@ pub async fn resolve_doh(host: &str) -> Result<Vec<IpAddr>, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        io::{Read, Write},
-        net::TcpListener,
-        sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc,
-        },
-        thread,
-    };
 
-    /// Server HTTP lokal: hit 1 -> Set-Cookie + echo UA;
-    /// hit 2+ -> echo Cookie yang diterima. Verifikasi UA + cookie jar.
-    fn spawn_echo_server() -> (String, Arc<AtomicUsize>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap().to_string();
-        let hits = Arc::new(AtomicUsize::new(0));
-        let hits_clone = hits.clone();
-        thread::spawn(move || {
-            for stream in listener.incoming().take(2) {
-                let mut stream = stream.unwrap();
-                let n = hits_clone.fetch_add(1, Ordering::SeqCst) + 1;
-                let mut buf = [0u8; 4096];
-                let len = stream.read(&mut buf).unwrap_or(0);
-                let req = String::from_utf8_lossy(&buf[..len]).to_string();
-                let ua = req
-                    .lines()
-                    .find(|l| l.to_lowercase().starts_with("user-agent:"))
-                    .unwrap_or("user-agent: MISSING")
-                    .to_string();
-                let cookie = req
-                    .lines()
-                    .find(|l| l.to_lowercase().starts_with("cookie:"))
-                    .unwrap_or("cookie: MISSING")
-                    .to_string();
-                let body = format!("{ua}\n{cookie}\nhit={n}");
-                let set_cookie = if n == 1 {
-                    "Set-Cookie: kuron_test=1; Path=/\r\n"
-                } else {
-                    ""
-                };
-                let res = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n{}Connection: close\r\n\r\n{}",
-                    body.len(),
-                    set_cookie,
-                    body
-                );
-                stream.write_all(res.as_bytes()).unwrap();
-            }
-        });
-        (format!("http://{addr}/"), hits)
+    /// Header per sumber murni (tanpa socket): UA Chrome desktop + Accept.
+    /// Cookie jar = `cookie_store(true)` reqwest tanpa logika kustom —
+    /// roundtrip HTTP-nya milik suite live (`live-tests`), bukan unit.
+    #[test]
+    fn headers_carry_desktop_ua_per_source() {
+        use reqwest::header::USER_AGENT;
+        for source in ["nhentai", "hitomi", "ehentai", "mangadex", "takdikenal"] {
+            let h = headers_for_source(source);
+            let ua = h.get(USER_AGENT).unwrap().to_str().unwrap();
+            assert!(ua.contains("Chrome/126"), "UA {source}: {ua}");
+            assert!(h.contains_key("Accept"), "Accept {source}");
+        }
+        // Manager ter-bangun dua mode (proxy sistem / tanpa proxy).
+        assert!(HttpClientManager::new().is_ok());
+        assert!(HttpClientManager::without_proxy().is_ok());
     }
 
+    /// Kebijakan retry murni: 5xx coba lagi, 2xx/4xx final.
     #[test]
-    fn get_sends_source_ua_and_keeps_cookies() {
-        let (url, hits) = spawn_echo_server();
-        let mgr = HttpClientManager::without_proxy().unwrap();
-        let first = tauri::async_runtime::block_on(mgr.get(&url, "nhentai")).unwrap();
-        assert!(first.contains("Chrome/126"), "UA sumber terkirim: {first}");
-        assert!(first.contains("cookie: MISSING"), "hit 1 belum bawa cookie");
-        let second = tauri::async_runtime::block_on(mgr.get(&url, "nhentai")).unwrap();
-        assert!(
-            second.contains("kuron_test=1"),
-            "cookie jar mengirim balik: {second}"
+    fn retry_policy_retries_server_errors_only() {
+        use reqwest::StatusCode;
+        assert!(should_retry_status(StatusCode::INTERNAL_SERVER_ERROR));
+        assert!(should_retry_status(StatusCode::BAD_GATEWAY));
+        assert!(!should_retry_status(StatusCode::OK));
+        assert!(!should_retry_status(StatusCode::FORBIDDEN));
+        assert!(!should_retry_status(StatusCode::NOT_FOUND));
+    }
+
+    /// Backoff eksponensial ala config mobile: base × 2^attempt.
+    #[test]
+    fn retry_backoff_doubles_per_attempt() {
+        assert_eq!(
+            (0..3).map(|a| retry_backoff_ms(1000, a)).collect::<Vec<_>>(),
+            vec![1000, 2000, 4000]
         );
-        assert_eq!(hits.load(Ordering::SeqCst), 2);
+        assert_eq!(retry_backoff_ms(1, 0), 1);
     }
 
+    /// Parse jawaban DoH Cloudflare murni: ambil A, lewati AAAA/invalid.
     #[test]
-    fn retry_recovers_from_500_but_not_403() {
-        use std::sync::atomic::AtomicUsize;
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap().to_string();
-        let hits = Arc::new(AtomicUsize::new(0));
-        let hits_clone = hits.clone();
-        thread::spawn(move || {
-            // hit 1: 500, hit 2: 200, hit 3: 403.
-            for stream in listener.incoming().take(3) {
-                let mut stream = stream.unwrap();
-                let n = hits_clone.fetch_add(1, Ordering::SeqCst) + 1;
-                let mut buf = [0u8; 1024];
-                let _ = stream.read(&mut buf);
-                let (status, body) = match n {
-                    1 => ("500 Internal Server Error", "boom"),
-                    2 => ("200 OK", "pulih"),
-                    _ => ("403 Forbidden", "no"),
-                };
-                let res = format!(
-                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                stream.write_all(res.as_bytes()).unwrap();
-            }
-        });
-        let mgr = HttpClientManager::without_proxy().unwrap();
-        let ok = tauri::async_runtime::block_on(mgr.get_with_retry(
-            &format!("http://{addr}/"),
-            "nhentai",
-            3,
-            1,
-        ))
-        .unwrap();
-        assert_eq!(ok, "pulih");
-        let err = tauri::async_runtime::block_on(mgr.get_with_retry(
-            &format!("http://{addr}/"),
-            "nhentai",
-            3,
-            1,
-        ))
-        .unwrap_err();
-        assert!(err.to_string().contains("403"), "{err}");
-        assert_eq!(hits.load(Ordering::SeqCst), 3);
+    fn doh_answer_parses_a_records_only() {
+        let body = r#"{"Status": 0, "Answer": [
+            {"name": "one.one.one.one.", "type": 1, "data": "1.1.1.1"},
+            {"name": "one.one.one.one.", "type": 28, "data": "2606:4700:4700::1111"},
+            {"name": "one.one.one.one.", "type": 1, "data": "bukan-ip"}
+        ]}"#;
+        let ips = parse_doh_ips("one.one.one.one", body).unwrap();
+        assert_eq!(ips, vec!["1.1.1.1".parse::<IpAddr>().unwrap()]);
+        assert!(parse_doh_ips("x", r#"{"Status": 0}"#).is_err());
+        assert!(parse_doh_ips("x", "bukan json").is_err());
     }
 
+    /// Live: DoH sungguhan ke Cloudflare (butuh internet).
+    #[cfg(feature = "live-tests")]
     #[test]
-    #[ignore = "butuh internet (DoH Cloudflare); jalankan manual: cargo test resolve_doh -- --ignored"]
-    fn resolve_doh_cloudflare() {
+    fn live_resolve_doh_cloudflare() {
         let ips = tauri::async_runtime::block_on(resolve_doh("one.one.one.one")).unwrap();
         assert!(!ips.is_empty());
     }

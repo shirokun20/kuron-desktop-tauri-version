@@ -4,6 +4,7 @@ pub mod content;
 pub mod download_task;
 pub mod glossary;
 pub mod hello;
+pub mod history_entry;
 pub mod page_image_result;
 pub mod reader_settings;
 pub mod search_filter;

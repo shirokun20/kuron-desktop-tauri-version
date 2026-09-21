@@ -418,28 +418,57 @@ mod tests {
         assert_eq!(build_tag_query(None, "tag", "x", "y").unwrap(), "x");
     }
 
+    /// Def dataSource `mangaTags` config-driven (disalin dari bentuk
+    /// config installed mangadex v1.1.10 — endpoint + JSON paths).
+    fn mangatags_def() -> serde_json::Value {
+        serde_json::json!({
+            "endpoint": "/manga/tag",
+            "itemsPath": "data",
+            "valuePath": "id",
+            "labelPath": "attributes.name.en",
+            "groupPath": "attributes.group"
+        })
+    }
+
     #[test]
-    #[ignore = "hits live api.mangadex.org; jalankan manual: cargo test live_mangadex_mangatags -- --ignored"]
-    fn live_mangadex_mangatags_resolves_77() {
-        // Replika jalur `cmd_search_form` untuk dataSource `mangaTags`
-        // (URL + fetch + `resolve_form_options`), tanpa State Tauri.
-        use crate::data::datasources::config::SourceConfigs;
-        let overlay = SourceConfigs::load_overlay(
-            &SourceConfigs::bundled_dir(),
-            &std::path::PathBuf::from("/tmp/kuron-test-noext"),
-        )
-        .unwrap();
-        let file = overlay.get("mangadex").expect("mangadex bundel");
-        let def = file.search_form["dataSources"]["mangaTags"].clone();
-        let ep = def.get("endpoint").and_then(|e| e.as_str()).unwrap();
-        let url = format!("{}{}", file.base_url, ep);
+    fn mangatags_def_maps_value_label_group() {
+        // Murni: `resolve_form_options` atas fixture `/manga/tag` mini.
+        let body = r#"{"data": [
+            {"id": "tag-uuid-1", "attributes": {
+                "name": {"en": "Action"}, "group": "genre"}},
+            {"id": "tag-uuid-2", "attributes": {
+                "name": {"en": "Gore"}, "group": "content"}}
+        ]}"#;
+        let opts = resolve_form_options(body, &mangatags_def()).expect("parse tag");
+        let arr = opts.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0].get("value").unwrap(), "tag-uuid-1");
+        assert_eq!(arr[0].get("label").unwrap(), "Action");
+        assert_eq!(arr[0].get("group").unwrap(), "genre");
+        assert_eq!(arr[1].get("group").unwrap(), "content");
+        // Label kosong → fallback ke value.
+        let no_label = r#"{"data": [{"id": "x", "attributes": {"group": "g"}}]}"#;
+        let opts = resolve_form_options(no_label, &mangatags_def()).unwrap();
+        assert_eq!(opts[0].get("label").unwrap(), "x");
+    }
+
+    /// Live: `/manga/tag` sungguhan (butuh internet). Katalog tag hanya
+    /// bertambah (tercatat 77 pada 2026-09-20) → batas bawah, bukan eksak.
+    #[cfg(feature = "live-tests")]
+    #[test]
+    fn live_mangadex_mangatags_resolves() {
+        let def = mangatags_def();
+        let url = format!(
+            "https://api.mangadex.org{}",
+            def.get("endpoint").and_then(|e| e.as_str()).unwrap()
+        );
         assert_eq!(url, "https://api.mangadex.org/manga/tag");
         // Sama seperti AppState produksi: `HttpClientManager::new()` (proxy on).
         let http = crate::network::HttpClientManager::new().unwrap();
         let body = tauri::async_runtime::block_on(http.get(&url, "mangadex")).unwrap();
-        let opts = resolve_form_options(&body, &def).expect("parse 77 tag");
+        let opts = resolve_form_options(&body, &def).expect("parse tag live");
         let arr = opts.as_array().unwrap();
-        assert_eq!(arr.len(), 77, "opsi mangaTags");
+        assert!(arr.len() >= 70, "opsi mangaTags susut: {}", arr.len());
         assert!(arr[0].get("value").and_then(|v| v.as_str()).unwrap().len() > 10);
         assert!(arr[0].get("label").and_then(|v| v.as_str()).is_some());
         assert!(arr[0].get("group").and_then(|v| v.as_str()).is_some());

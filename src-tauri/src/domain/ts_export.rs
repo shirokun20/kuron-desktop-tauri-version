@@ -7,10 +7,13 @@ use ts_rs::TS;
 use crate::{
     commands::AppInfo,
     core::InstalledSource,
-    data::datasources::extension::{ExtensionManifest, ManifestEntry, ManifestMeta},
+    data::datasources::extension::{
+        ExtensionManifest, ManifestEntry, ManifestMeta, ZipPreview, ZipSourceCandidate,
+    },
     domain::{
-        BubbleBox, Chapter, Content, DownloadState, DownloadTask, GlossaryEntry, Hello, Language,
-        PageImageResult, PageTranslation, ReaderSettings, ReadingMode, SearchFilter, SourceId,
+        BubbleBox, Chapter, Content, DownloadState, DownloadTask, GlossaryEntry, Hello,
+        HistoryEntry, Language, PageImageResult, PageTranslation, ReaderSettings, ReadingMode,
+        SearchFilter, SourceId,
     },
 };
 
@@ -37,6 +40,9 @@ fn export_types_ts() {
         ExtensionManifest::decl(&cfg),
         ManifestEntry::decl(&cfg),
         ManifestMeta::decl(&cfg),
+        ZipSourceCandidate::decl(&cfg),
+        ZipPreview::decl(&cfg),
+        HistoryEntry::decl(&cfg),
     ];
 
     let mut out = String::from(
@@ -56,4 +62,7 @@ fn export_types_ts() {
     assert!(out.contains("type AppInfo ="));
     assert!(out.contains("type InstalledSource ="));
     assert!(out.contains("type ExtensionManifest ="));
+    assert!(out.contains("type ZipPreview ="));
+    assert!(out.contains("type ZipSourceCandidate ="));
+    assert!(out.contains("type HistoryEntry ="));
 }

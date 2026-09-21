@@ -176,10 +176,14 @@ impl SqliteDs {
             .conn
             .lock()
             .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
+        // Hapus + sisip (ala `insert replace` sqflite mobile): rekaman ulang
+        // selalu jadi baris terbaru walau dalam detik yang sama.
         conn.execute(
-            "INSERT INTO history (content_id, position, updated_at) VALUES (?1, ?2, ?3)
-             ON CONFLICT(content_id) DO UPDATE SET position=excluded.position,
-               updated_at=excluded.updated_at",
+            "DELETE FROM history WHERE content_id = ?1",
+            params![content_id],
+        )?;
+        conn.execute(
+            "INSERT INTO history (content_id, position, updated_at) VALUES (?1, ?2, ?3)",
             params![content_id, position, now_secs()],
         )?;
         Ok(())
@@ -191,7 +195,8 @@ impl SqliteDs {
             .lock()
             .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         let mut stmt = conn.prepare(
-            "SELECT content_id, position FROM history ORDER BY updated_at DESC LIMIT ?1",
+            "SELECT content_id, position FROM history
+             ORDER BY updated_at DESC, rowid DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
@@ -233,9 +238,53 @@ impl SqliteDs {
             .conn
             .lock()
             .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
-        let mut stmt = conn.prepare("SELECT content_id FROM favorites ORDER BY added_at DESC")?;
+        let mut stmt = conn.prepare(
+            "SELECT content_id FROM favorites ORDER BY added_at DESC, rowid DESC",
+        )?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    /// Favorit + snapshot konten (ala `getFavorites` mobile yang
+    /// mengembalikan display data). `is_favorite` selalu true di sini —
+    /// tabel `favorites` adalah kebenaran, bukan kolom `contents`.
+    pub fn list_favorite_contents(&self) -> Result<Vec<Content>, AppError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.title, c.cover_url, c.source_id, c.upload_date
+             FROM favorites f JOIN contents c ON c.id = f.content_id
+             ORDER BY f.added_at DESC, f.rowid DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Content {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                cover_url: row.get(2)?,
+                source_id: row.get(3)?,
+                upload_date: row.get(4)?,
+                is_favorite: true,
+                page_count: None,
+                language: None,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    /// Reset data library: riwayat + favorit + snapshot konten/chapter.
+    /// Unduhan + cache terjemahan bukan milik library — tidak ikut.
+    pub fn clear_library(&self) -> Result<(), AppError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
+        conn.execute_batch(
+            "DELETE FROM history; DELETE FROM favorites;
+             DELETE FROM contents; DELETE FROM chapters;",
+        )?;
+        Ok(())
     }
 
     pub fn save_download(
@@ -337,13 +386,20 @@ impl KvStoreDs {
     }
 }
 
-/// Secret di keychain OS — ganti flutter_secure_storage (kunci API AI, cookie CF).
+/// Backend penyimpanan secret: keychain OS (produksi) vs memori (test).
+pub trait SecretBackend: Send + Sync {
+    fn set(&self, account: &str, secret: &str) -> Result<(), AppError>;
+    fn get(&self, account: &str) -> Result<Option<String>, AppError>;
+    fn delete(&self, account: &str) -> Result<(), AppError>;
+}
+
+/// Backend keychain OS — ganti flutter_secure_storage (kunci API AI, cookie CF).
 /// TIDAK pernah di file plaintext / log.
-pub struct SecretStore {
+pub struct KeychainBackend {
     service: String,
 }
 
-impl SecretStore {
+impl KeychainBackend {
     pub fn new(service: &str) -> Self {
         Self {
             service: service.to_string(),
@@ -354,14 +410,16 @@ impl SecretStore {
         keyring::Entry::new(&self.service, account)
             .map_err(|e| AppError::Storage(format!("keychain: {e}")))
     }
+}
 
-    pub fn set_secret(&self, account: &str, secret: &str) -> Result<(), AppError> {
+impl SecretBackend for KeychainBackend {
+    fn set(&self, account: &str, secret: &str) -> Result<(), AppError> {
         self.entry(account)?
             .set_password(secret)
             .map_err(|e| AppError::Storage(format!("keychain: {e}")))
     }
 
-    pub fn get_secret(&self, account: &str) -> Result<Option<String>, AppError> {
+    fn get(&self, account: &str) -> Result<Option<String>, AppError> {
         match self.entry(account)?.get_password() {
             Ok(pw) => Ok(Some(pw)),
             Err(keyring::Error::NoEntry) => Ok(None),
@@ -369,12 +427,83 @@ impl SecretStore {
         }
     }
 
-    pub fn delete_secret(&self, account: &str) -> Result<(), AppError> {
+    fn delete(&self, account: &str) -> Result<(), AppError> {
         match self.entry(account)?.delete_credential() {
             Ok(()) => Ok(()),
             Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(AppError::Storage(format!("keychain: {e}"))),
         }
+    }
+}
+
+/// Backend memori untuk test deterministik (tanpa sentuh keychain OS).
+#[derive(Default)]
+pub struct MemorySecretBackend {
+    map: Mutex<HashMap<String, String>>,
+}
+
+impl MemorySecretBackend {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl SecretBackend for MemorySecretBackend {
+    fn set(&self, account: &str, secret: &str) -> Result<(), AppError> {
+        self.map
+            .lock()
+            .map_err(|e| AppError::Storage(format!("secret lock: {e}")))?
+            .insert(account.to_string(), secret.to_string());
+        Ok(())
+    }
+
+    fn get(&self, account: &str) -> Result<Option<String>, AppError> {
+        Ok(self
+            .map
+            .lock()
+            .map_err(|e| AppError::Storage(format!("secret lock: {e}")))?
+            .get(account)
+            .cloned())
+    }
+
+    fn delete(&self, account: &str) -> Result<(), AppError> {
+        self.map
+            .lock()
+            .map_err(|e| AppError::Storage(format!("secret lock: {e}")))?
+            .remove(account);
+        Ok(())
+    }
+}
+
+/// Secret store: keychain OS di produksi, memori di test.
+pub struct SecretStore {
+    backend: Box<dyn SecretBackend>,
+}
+
+impl SecretStore {
+    pub fn new(service: &str) -> Self {
+        Self {
+            backend: Box::new(KeychainBackend::new(service)),
+        }
+    }
+
+    /// Varian memori untuk test deterministik (tanpa keychain OS).
+    pub fn new_memory() -> Self {
+        Self {
+            backend: Box::new(MemorySecretBackend::new()),
+        }
+    }
+
+    pub fn set_secret(&self, account: &str, secret: &str) -> Result<(), AppError> {
+        self.backend.set(account, secret)
+    }
+
+    pub fn get_secret(&self, account: &str) -> Result<Option<String>, AppError> {
+        self.backend.get(account)
+    }
+
+    pub fn delete_secret(&self, account: &str) -> Result<(), AppError> {
+        self.backend.delete(account)
     }
 }
 
@@ -578,8 +707,24 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "menyentuh keychain OS; jalankan manual: cargo test secret_keychain -- --ignored"]
-    fn secret_keychain_roundtrip() {
+    fn secret_memory_roundtrip() {
+        // Murni: backend memori, tanpa sentuh keychain OS.
+        let store = SecretStore::new_memory();
+        store.delete_secret("akun-test").unwrap();
+        assert!(store.get_secret("akun-test").unwrap().is_none());
+        store.set_secret("akun-test", "s3cr3t").unwrap();
+        assert_eq!(
+            store.get_secret("akun-test").unwrap().as_deref(),
+            Some("s3cr3t")
+        );
+        store.delete_secret("akun-test").unwrap();
+        assert!(store.get_secret("akun-test").unwrap().is_none());
+    }
+
+    /// Live: keychain OS sungguhan (butuh sesi login desktop).
+    #[cfg(feature = "live-tests")]
+    #[test]
+    fn live_secret_keychain_roundtrip() {
         let store = SecretStore::new("id.nhasix.kuron.test");
         store.delete_secret("akun-test").unwrap();
         assert!(store.get_secret("akun-test").unwrap().is_none());

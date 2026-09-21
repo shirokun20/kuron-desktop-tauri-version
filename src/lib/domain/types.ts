@@ -50,5 +50,18 @@ export type ExtensionManifest = { schemaVersion: number, minimumAppVersion: stri
 export type ManifestEntry = { id: string, version: string, url: string, meta: ManifestMeta | null, checksum: string, };
 
 export type ManifestMeta = { displayName: string, description: string, contentType: string, language: string, sizeKb: number, iconUrl: string | null, };
+
 export type ZipSourceCandidate = { id: string, version: string, displayName: string | null, iconUrl: string | null, };
-export type ZipPreview = { token: string, sources: ZipSourceCandidate[], };
+
+export type ZipPreview = { token: string, sources: Array<ZipSourceCandidate>, };
+
+export type HistoryEntry = { content_id: string, 
+/**
+ * Halaman terakhir dibaca (1-based, ala `History.lastPage` mobile).
+ */
+position: bigint, 
+/**
+ * Terakhir dilihat, unix epoch detik (ala `History.lastViewed`).
+ */
+updated_at: bigint, };
+

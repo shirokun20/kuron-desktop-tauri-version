@@ -4,6 +4,7 @@
   // Styling 100% token Kuron (bukan warna wireframe).
   import { contentStore } from "../stores/content.svelte";
   import { helloStore } from "../stores/hello.svelte";
+  import { libraryStore } from "../stores/library.svelte";
   import { sourceStore } from "../stores/source.svelte";
   import { clearSavedQuery, loadSavedQuery } from "../stores/filterPersist";
   import { overlayStore } from "../stores/overlay.svelte";
@@ -82,6 +83,8 @@
   }
 
   onMount(() => {
+    // Favorit untuk tombol hati di kartu (gagal → kosong, bukan error merah).
+    libraryStore.load();
     listen("toggle-sidebar", () => toggleSidebar()).catch(() => {
       // mode browser: event Tauri tidak ada
     });

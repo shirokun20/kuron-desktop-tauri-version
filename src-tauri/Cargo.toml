@@ -17,6 +17,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# Suite live opt-in (internet + keychain OS + situs nyata).
+# `cargo test` default = 100% deterministik offline, 0 failed 0 ignored.
+# Verifikasi live manual: `cargo test --features live-tests`.
+live-tests = []
+
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"

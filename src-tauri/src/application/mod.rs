@@ -5,7 +5,10 @@ pub mod services;
 pub mod usecases;
 
 pub use usecases::{
+    clear_history::ClearHistoryUseCase, clear_library::ClearLibraryUseCase,
     get_chapters::GetChaptersUseCase, get_content_detail::GetContentDetailUseCase,
     get_home_feed::GetHomeFeedUseCase, get_page_images::GetPageImagesUseCase,
-    say_hello::SayHelloUseCase, search_content::SearchContentUseCase,
+    list_favorites::ListFavoritesUseCase, list_history::ListHistoryUseCase,
+    record_history::RecordHistoryUseCase, say_hello::SayHelloUseCase,
+    search_content::SearchContentUseCase, set_favorite::SetFavoriteUseCase,
 };

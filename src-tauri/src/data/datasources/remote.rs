@@ -1634,7 +1634,16 @@ impl GenericScraperAdapter {
         config: &SourceConfig,
     ) -> Result<ContentModel, AppError> {
         let html = self.http.get(url, &config.source_id).await?;
-        let doc = Html::parse_document(&html);
+        Self::parse_detail(&html, url, config)
+    }
+
+    /// Parse detail dari HTML (murni, tanpa network).
+    fn parse_detail(
+        html: &str,
+        url: &str,
+        config: &SourceConfig,
+    ) -> Result<ContentModel, AppError> {
+        let doc = Html::parse_document(html);
         let root = doc.root_element();
         let tmap = if config.detail_title.selector.is_empty() {
             &config.title
@@ -1692,9 +1701,19 @@ impl GenericScraperAdapter {
         config: &SourceConfig,
     ) -> Result<Vec<Chapter>, AppError> {
         let html = self.http.get(url, &config.source_id).await?;
+        Self::parse_chapters(&html, url, content_id, config)
+    }
+
+    /// Parse daftar chapter dari HTML (murni, tanpa network).
+    fn parse_chapters(
+        html: &str,
+        url: &str,
+        content_id: &str,
+        config: &SourceConfig,
+    ) -> Result<Vec<Chapter>, AppError> {
         // E-Hentai: Part chapters dari paginasi galeri (mobile `_buildPartChapters`).
         if config.source_id == "ehentai" {
-            return Self::ehentai_part_chapters(&html, url, content_id);
+            return Self::ehentai_part_chapters(html, url, content_id);
         }
         // Selector chapter kosong = sumber single-chapter.
         if config.chapter_selector.trim().is_empty() {
@@ -1707,7 +1726,7 @@ impl GenericScraperAdapter {
                 external_url: Some(config.absolutize(url)),
             }]);
         }
-        let doc = Html::parse_document(&html);
+        let doc = Html::parse_document(html);
         let sel = Self::sel(&config.chapter_selector)?;
         let link_sel = Self::sel(&config.chapter_link.selector)?;
         let title_sel = Self::sel(&config.chapter_title.selector)?;
@@ -1830,7 +1849,12 @@ impl GenericScraperAdapter {
         config: &SourceConfig,
     ) -> Result<Vec<String>, AppError> {
         let html = self.http.get(url, &config.source_id).await?;
-        let doc = Html::parse_document(&html);
+        Self::parse_page_images(&html, config)
+    }
+
+    /// Parse URL gambar halaman dari HTML (murni, tanpa network).
+    fn parse_page_images(html: &str, config: &SourceConfig) -> Result<Vec<String>, AppError> {
+        let doc = Html::parse_document(html);
         let sel = Self::sel(&config.page_selector)?;
         let attr = config
             .page_attr
@@ -1882,42 +1906,6 @@ mod tests {
             "relationships": []
         }]
     }"#;
-
-    /// Server fixture lokal: `/list` HTML galeri, `/api` JSON mangadex.
-    fn spawn_fixture() -> String {
-        use std::{
-            io::{Read, Write},
-            net::TcpListener,
-            thread,
-        };
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap().to_string();
-        thread::spawn(move || {
-            for stream in listener.incoming().take(8) {
-                let mut stream = stream.unwrap();
-                let mut buf = [0u8; 4096];
-                let len = stream.read(&mut buf).unwrap_or(0);
-                let req = String::from_utf8_lossy(&buf[..len]).to_string();
-                let path = req
-                    .lines()
-                    .next()
-                    .and_then(|l| l.split_whitespace().nth(1))
-                    .unwrap_or("/");
-                let body = if path.starts_with("/api") {
-                    MANGADEX_JSON.to_string()
-                } else {
-                    GALLERY_HTML.to_string()
-                };
-                let res = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                stream.write_all(res.as_bytes()).unwrap();
-            }
-        });
-        format!("http://{addr}")
-    }
 
     fn nhentai_shaped() -> SourceConfig {
         SourceConfig {
@@ -1975,13 +1963,8 @@ mod tests {
 
     #[test]
     fn scraper_parses_gallery_fixture() {
-        let base = spawn_fixture();
-        let http = HttpClientManager::without_proxy().unwrap();
-        let scraper = GenericScraperAdapter::new(http);
-        let items = tauri::async_runtime::block_on(
-            scraper.fetch_list(&format!("{base}/list"), &nhentai_shaped()),
-        )
-        .unwrap();
+        // Murni: parse HTML fixture langsung (tanpa socket lokal).
+        let items = GenericScraperAdapter::parse_list(GALLERY_HTML, &nhentai_shaped()).unwrap();
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].id, "12345");
         assert_eq!(items[0].title, "Judul Satu");
@@ -2137,12 +2120,8 @@ mod tests {
 
     #[test]
     fn rest_parses_mangadex_fixture() {
-        let base = spawn_fixture();
-        let http = HttpClientManager::without_proxy().unwrap();
-        // Suntik base API lewat URL langsung: uji parser via fetch + parse.
-        let body =
-            tauri::async_runtime::block_on(http.get(&format!("{base}/api"), "mangadex")).unwrap();
-        let items = GenericRestAdapter::parse_mangadex(&body).unwrap();
+        // Murni: parse JSON fixture langsung (tanpa socket lokal).
+        let items = GenericRestAdapter::parse_mangadex(MANGADEX_JSON).unwrap();
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].id, "manga-1");
         assert_eq!(items[0].title, "Sample Manga");
@@ -2167,8 +2146,8 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "live-tests")]
     #[test]
-    #[ignore = "hits live e-hentai.org; jalankan manual: cargo test live_ehentai -- --ignored"]
     fn live_ehentai_cursor_pagination() {
         use std::collections::HashSet;
         let http = HttpClientManager::new().unwrap();
@@ -2196,8 +2175,8 @@ mod tests {
             "halaman 2 duplikat halaman 1 (?page= diabaikan situs)"
         );
     }
+    #[cfg(feature = "live-tests")]
     #[test]
-    #[ignore = "hits live api.mangadex.org; jalankan manual: cargo test live_mangadex -- --ignored"]
     fn live_mangadex_search_parses() {
         // NHentai/Hitomi/E-H live 403 dari network tanpa cookie CF
         // (risiko spec §7 — mitigasi: cookie harvest Fase 2 lanjutan).
@@ -2479,11 +2458,9 @@ mod nhentai_tests {
 
     #[test]
     fn json_engine_parses_areakomik_shaped_fixture() {
-        use std::{
-            io::{Read, Write},
-            net::TcpListener,
-            thread,
-        };
+        // Murni: config JSON inline (bentuk installed) + parse fixture
+        // langsung (tanpa socket lokal). Base fiktif khusus absolutize URL.
+        const BASE: &str = "http://ak.test";
         const LIST: &str = r#"<html><body>
             <div class="komik-card"><a class="thumb-wrap" href="/series/slug-satu/">
             <img src="https://cdn.example/1.jpg"/><div class="card-title">Judul Satu</div><span class="page-num">24 halaman</span><span class="lang">English</span></a></div>
@@ -2504,34 +2481,6 @@ mod nhentai_tests {
             <img src="https://gudangkomik.example/p1.jpg"/>
             <img src="https://warungkomikcdn.example/p2.jpg"/>
             </body></html>"#;
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        thread::spawn(move || {
-            for stream in listener.incoming().take(8) {
-                let mut stream = stream.unwrap();
-                let mut buf = [0u8; 4096];
-                let len = stream.read(&mut buf).unwrap_or(0);
-                let req = String::from_utf8_lossy(&buf[..len]).to_string();
-                let path = req
-                    .lines()
-                    .next()
-                    .and_then(|l| l.split_whitespace().nth(1))
-                    .unwrap_or("/");
-                let body = if path.starts_with("/ak-detail") {
-                    DETAIL
-                } else if path.starts_with("/ak-chapter") {
-                    CHAPTER
-                } else {
-                    LIST
-                };
-                let res = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                stream.write_all(res.as_bytes()).unwrap();
-            }
-        });
         let scraper_json = r#"{"enabled": true, "urlPatterns": {
                 "search": {"url": "/ak-list", "list": {"container": ".komik-card",
                     "fields": {
@@ -2549,7 +2498,7 @@ mod nhentai_tests {
                     "title": {"selector": ".chap-num"}}}},
                 "reader": {"images": {"selector": "img", "attribute": "src"}}}}"#;
         let file: crate::data::datasources::config::SourceFile = serde_json::from_str(&format!(
-            r#"{{"source": "areakomik-test", "baseUrl": "{base}", "scraper": {scraper_json}}}"#
+            r#"{{"source": "areakomik-test", "baseUrl": "{BASE}", "scraper": {scraper_json}}}"#
         ))
         .unwrap();
         let cfg = source_config_from_json(
@@ -2560,40 +2509,28 @@ mod nhentai_tests {
         )
         .expect("pola areakomik terbaca");
         assert_eq!(cfg.list_path, "/ak-list");
-        let http = HttpClientManager::without_proxy().unwrap();
-        let engine = GenericScraperAdapter::new(http);
-        let items =
-            tauri::async_runtime::block_on(engine.fetch_list(&format!("{base}/ak-list"), &cfg))
-                .unwrap();
+        let items = GenericScraperAdapter::parse_list(LIST, &cfg).unwrap();
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].id, "slug-satu");
         assert_eq!(items[0].title, "Judul Satu");
         assert_eq!(items[0].cover_url, "https://cdn.example/1.jpg");
         assert_eq!(items[0].language.as_deref(), Some("en"));
         assert_eq!(items[0].page_count, Some(24));
-        let detail =
-            tauri::async_runtime::block_on(engine.fetch_detail(&format!("{base}/ak-detail"), &cfg))
-                .unwrap();
+        let detail_url = format!("{BASE}/ak-detail");
+        let detail = GenericScraperAdapter::parse_detail(DETAIL, &detail_url, &cfg).unwrap();
         assert_eq!(detail.title, "Judul Satu");
         assert_eq!(detail.cover_url, "https://cdn.example/cover.jpg");
-        let chapters = tauri::async_runtime::block_on(engine.fetch_chapters(
-            &format!("{base}/ak-detail"),
-            "x",
-            &cfg,
-        ))
-        .unwrap();
+        let chapters =
+            GenericScraperAdapter::parse_chapters(DETAIL, &detail_url, "x", &cfg).unwrap();
         assert_eq!(chapters.len(), 2);
         assert_eq!(chapters[0].id, "c1");
         assert_eq!(chapters[0].title, "Chapter 1");
-        let expect_ch = format!("{base}/chapter/c1/");
+        let expect_ch = format!("{BASE}/chapter/c1/");
         assert_eq!(
             chapters[0].external_url.as_deref(),
             Some(expect_ch.as_str())
         );
-        let pages = tauri::async_runtime::block_on(
-            engine.fetch_page_images(&format!("{base}/ak-chapter"), &cfg),
-        )
-        .unwrap();
+        let pages = GenericScraperAdapter::parse_page_images(CHAPTER, &cfg).unwrap();
         assert_eq!(pages.len(), 2);
         assert!(pages[0].contains("gudangkomik"));
     }
@@ -2804,8 +2741,8 @@ mod nhentai_tests {
             .contains("/api/v2/galleries?page=1"));
     }
 
+    #[cfg(feature = "live-tests")]
     #[test]
-    #[ignore = "hits live nhentai.net API; butuh config ter-install — salin manual satu file ke /tmp bila perlu"]
     fn live_nhentai_api_search_detail_pages() {
         let cfg: SourceFile = serde_json::from_str(
             r#"{"source": "nhentai", "api": {"apiBase": "https://nhentai.net",

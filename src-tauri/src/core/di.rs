@@ -13,9 +13,9 @@ use crate::{
                 NhentaiApiAdapter, PaginationCursors, SourceConfig,
             },
         },
-        repositories::{ContentRepositoryImpl, MockContentRepository},
+        repositories::{ContentRepositoryImpl, LibraryRepositoryImpl, MockContentRepository},
     },
-    domain::repositories::ContentRepository,
+    domain::repositories::{ContentRepository, LibraryRepository},
     network::HttpClientManager,
 };
 
@@ -24,6 +24,8 @@ pub struct AppState {
     pub version: String,
     /// Default legacy (mock) — dipakai feed "Semua".
     pub content_repo: Arc<dyn ContentRepository>,
+    /// Library lokal SQLite (riwayat + favorit, 8.3).
+    pub library: Arc<dyn LibraryRepository>,
     pub http: HttpClientManager,
     /// Dir config ekstensi ter-install (`{data}/extensions`).
     pub ext_dir: PathBuf,
@@ -38,14 +40,35 @@ fn default_ext_dir() -> PathBuf {
         .join("extensions")
 }
 
+fn default_db_path() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("id.nhasix.kuron")
+        .join("kuron.db")
+}
+
 impl AppState {
     pub fn new(content_repo: Arc<dyn ContentRepository>) -> Self {
         let ext_dir = default_ext_dir();
         let _ = std::fs::create_dir_all(&ext_dir);
+        // Library: file `kuron.db`; bila gagal dibuka (lock/IO), fallback
+        // memori + warn agar app tetap boot (data sesi tak persist).
+        let library: Arc<dyn LibraryRepository> =
+            match LibraryRepositoryImpl::open(&default_db_path()) {
+                Ok(repo) => Arc::new(repo),
+                Err(e) => {
+                    tracing::warn!("library fallback memori: {e}");
+                    Arc::new(
+                        LibraryRepositoryImpl::open_in_memory()
+                            .expect("sqlite memori init"),
+                    )
+                }
+            };
         Self {
             app_name: "Kuron Desktop".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             content_repo,
+            library,
             http: HttpClientManager::new().expect("tls backend init"),
             ext_dir,
             cursors: PaginationCursors::default(),
@@ -275,11 +298,31 @@ mod tests {
         assert_eq!(feed.len(), 8);
     }
 
+    /// Live: rating erotica via repo + config installed (butuh internet).
+    /// Config mangadex di-install dari manifest resmi ke temp dir
+    /// (hermetik, config-driven — tanpa bundle/data-dir pengguna).
+    #[cfg(feature = "live-tests")]
     #[test]
-    #[ignore = "hits live api.mangadex.org; manual: cargo test repro_md_rating -- --ignored"]
-    fn repro_md_rating() {
+    fn live_repro_md_rating() {
+        use crate::data::datasources::extension::{
+            ExtensionManager, ExtensionManifest, DEFAULT_MANIFEST_URL,
+        };
         use crate::domain::{repositories::ContentRepository, SearchFilter};
-        let state = AppState::default();
+        let http = HttpClientManager::new().unwrap();
+        let manifest = ExtensionManifest::fetch(&http, DEFAULT_MANIFEST_URL).unwrap();
+        let entry = manifest
+            .installable_sources
+            .iter()
+            .find(|e| e.id == "mangadex")
+            .expect("mangadex ada di manifest")
+            .clone();
+        let dir = std::env::temp_dir().join(format!("kuron-test-md-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        ExtensionManager::new(&http, &dir)
+            .unwrap()
+            .install(DEFAULT_MANIFEST_URL, &entry)
+            .unwrap();
+        let state = state_with_ext_dir(&dir);
         let repo = state.repo_for("mangadex").unwrap();
         for q in [
             "raw:contentRating[]=erotica",
@@ -294,6 +337,7 @@ mod tests {
                 tauri::async_runtime::block_on(async { repo.search(filter).await }).unwrap();
             assert!(!items.is_empty(), "rating {q} kosong");
         }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -312,6 +356,7 @@ mod tests {
             app_name: "test".into(),
             version: "0".into(),
             content_repo: Arc::new(MockContentRepository),
+            library: Arc::new(LibraryRepositoryImpl::open_in_memory().unwrap()),
             http: HttpClientManager::new().expect("tls backend init"),
             ext_dir: dir.to_path_buf(),
             cursors: PaginationCursors::default(),
@@ -378,8 +423,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    #[cfg(feature = "live-tests")]
     #[test]
-    #[ignore = "hits live areakomik + kuron-extensions; manual: cargo test live_areakomik -- --ignored"]
     fn live_areakomik_feed_via_installed_json() {
         use crate::data::datasources::{
             config::SourceConfigs,
