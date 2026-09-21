@@ -74,6 +74,10 @@ pub struct SourceConfig {
     /// Field detail config-driven (kosong = tak dipakai).
     pub detail_page_count: FieldMap,
     pub detail_language: FieldMap,
+    /// Sinopsis (`detail.fields.description`, mobile `subTitle`).
+    pub detail_description: FieldMap,
+    /// Genre/tag multi (`detail.fields.tags|tag|genre|genres`).
+    pub detail_genres: FieldMap,
     /// Field opsional list ala mapper mobile (kosong = tak dipakai).
     pub page_count: FieldMap,
     pub language: FieldMap,
@@ -100,6 +104,16 @@ fn extract(scope: scraper::ElementRef<'_>, sel: &Selector, map: &FieldMap) -> St
         .map(|el| raw_of(el, map))
         .unwrap_or_default();
     apply_map(raw, map)
+}
+
+/// Ekstrak SEMUA cocok (field `multi`, mis. genre) — kosong dibuang.
+fn extract_all(scope: scraper::ElementRef<'_>, sel: &Selector, map: &FieldMap) -> Vec<String> {
+    scope
+        .select(sel)
+        .map(|el| apply_map(raw_of(el, map), map))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 /// Ekstrak dari elemen itu sendiri (bukan turunan) — mis. `<img>` hasil seleksi.
@@ -634,6 +648,8 @@ pub fn nhentai_config() -> SourceConfig {
         detail_title: FieldMap::default(),
         detail_cover: FieldMap::default(),
         detail_page_count: FieldMap::default(),
+        detail_description: FieldMap::default(),
+        detail_genres: FieldMap::default(),
         detail_language: FieldMap::default(),
         chapter_selector: "a.go".to_string(),
         chapter_link: FieldMap::attr("a.go", "href"),
@@ -669,6 +685,8 @@ pub fn hitomi_config() -> SourceConfig {
         detail_title: FieldMap::default(),
         detail_cover: FieldMap::default(),
         detail_page_count: FieldMap::default(),
+        detail_description: FieldMap::default(),
+        detail_genres: FieldMap::default(),
         detail_language: FieldMap::default(),
         chapter_selector: ".manga-chapter a".to_string(),
         chapter_link: FieldMap::attr(".manga-chapter a", "href"),
@@ -710,6 +728,8 @@ pub fn ehentai_config() -> SourceConfig {
             regex: Some("([0-9]+)".to_string()),
             ..Default::default()
         },
+        detail_description: FieldMap::default(),
+        detail_genres: FieldMap::default(),
         detail_language: FieldMap::default(),
         // Single-gallery (mobile bangun Part chapters dari paginasi ?p=).
         chapter_selector: String::new(),
@@ -872,6 +892,20 @@ pub fn source_config_from_json(
     } else {
         detail_language
     };
+    // Mobile `_extractDescription` (subTitle→description) + `_resolveTags`
+    // (tags→tag→genre→genres): kunci pertama yang ADA selector-nya.
+    let detail_description = dfield(&["subTitle", "description"]);
+    let detail_description = if detail_description.selector.is_empty() {
+        FieldMap::default()
+    } else {
+        detail_description
+    };
+    let detail_genres = dfield(&["tags", "tag", "genre", "genres"]);
+    let detail_genres = if detail_genres.selector.is_empty() {
+        FieldMap::default()
+    } else {
+        detail_genres
+    };
     // Cursor token mobile (`list.pagination.next`, mis. `#unext`).
     let pagination_next = list.pagination.get("next").cloned().unwrap_or_default();
     Some(SourceConfig {
@@ -890,6 +924,8 @@ pub fn source_config_from_json(
         detail_cover,
         detail_page_count,
         detail_language,
+        detail_description,
+        detail_genres,
         page_count,
         language,
         pagination_next,
@@ -960,24 +996,19 @@ pub fn normalize_lang(s: &str) -> Option<String> {
     }
 }
 
-/// Bahasa NHentai dari `tag_ids` list (mobile `languageTagMap`):
-/// 12227→en, 29963→zh, default ja.
-fn nhentai_lang_of_ids(item: &serde_json::Value) -> Option<String> {
-    let ids: Vec<u64> = item
-        .get("tag_ids")
-        .and_then(|t| t.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
-        .unwrap_or_default();
-    if ids.contains(&12227) {
-        Some("en".to_string())
-    } else if ids.contains(&29963) {
-        Some("zh".to_string())
-    } else {
-        Some("ja".to_string())
-    }
+/// Fallback `languageTagMap` = salinan nilai config bundel (pola endpoint).
+fn default_language_tag_map() -> std::collections::HashMap<String, String> {
+    [
+        ("6346".to_string(), "japanese".to_string()),
+        ("12227".to_string(), "english".to_string()),
+        ("29963".to_string(), "chinese".to_string()),
+    ]
+    .into_iter()
+    .collect()
 }
 
-/// Bahasa NHentai dari tags detail (type=language, abaikan "translated").
+/// Bahasa NHentai dari tags detail (mobile `firstWhere`: type=language,
+/// nama tak MENGANDUNG "translated").
 /// Parse `tags[]` detail nhentai → `Tag` (murni).
 /// Bentuk live: `{id, type, name, slug, url, count}` — toleran: entri
 /// tanpa nama dilewati, angka tak valid jadi 0 (ala fallback mobile).
@@ -1017,7 +1048,7 @@ fn nhentai_lang_of_tags(v: &serde_json::Value) -> Option<String> {
             continue;
         }
         let name = t.get("name").and_then(|n| n.as_str()).unwrap_or("");
-        if name == "translated" {
+        if name.to_lowercase().contains("translated") {
             continue;
         }
         if let Some(code) = normalize_lang(name) {
@@ -1468,13 +1499,41 @@ impl GenericRestAdapter {
         out
     }
 
+    /// URL chapter feed (murni, mobile `fetchChapters`): isi `{id}` +
+    /// `{language}` (kosong → param dibuang), lalu UPSERT `offset`
+    /// (load-more bottomsheet; contoh mobile `loadedForLang`).
+    fn md_chapters_url(template: &str, base: &str, manga_id: &str, lang: Option<&str>, offset: Option<u32>) -> String {
+        let filled = fill_url(
+            template,
+            &[("id", manga_id), ("language", lang.unwrap_or(""))],
+        );
+        // `{language}` kosong tak ter-strip otomatis (nama param beda) →
+        // buang manual, HANYA saat tanpa filter bahasa.
+        let cleaned = if lang.is_none() {
+            filled
+                .replace("&translatedLanguage[]=", "&")
+                .replace("?translatedLanguage[]=&", "?")
+                .replace("?translatedLanguage[]=", "?")
+        } else {
+            filled
+        };
+        let mut url = format!("{base}{cleaned}");
+        if let Some(o) = offset.filter(|o| *o > 0) {
+            url.push(if url.contains('?') { '&' } else { '?' });
+            url.push_str(&format!("offset={o}"));
+        }
+        url
+    }
+
     /// Chapter feed (`api.detail.chapters`, mobile `fetchChapters` +
     /// `loadChapterLane`): bahasa eksplisit (chip UI) → satu fetch;
     /// None → coba `en` dulu, fallback tanpa filter bahasa.
+    /// `offset` = load-more (None/0 = halaman pertama).
     pub async fn chapters_mangadex(
         &self,
         manga_id: &str,
         language: Option<&str>,
+        offset: Option<u32>,
     ) -> Result<Vec<Chapter>, AppError> {
         let template: String = self
             .source_file
@@ -1491,21 +1550,7 @@ impl GenericRestAdapter {
             None => vec![Some("en"), None],
         };
         for lang in tries {
-            let filled = fill_url(
-                &template,
-                &[("id", manga_id), ("language", lang.unwrap_or(""))],
-            );
-            // `{language}` kosong tak ter-strip otomatis (nama param beda) →
-            // buang manual, HANYA saat tanpa filter bahasa.
-            let cleaned = if lang.is_none() {
-                filled
-                    .replace("&translatedLanguage[]=", "&")
-                    .replace("?translatedLanguage[]=&", "?")
-                    .replace("?translatedLanguage[]=", "?")
-            } else {
-                filled
-            };
-            let url = format!("{}{}", self.md_base(), cleaned);
+            let url = Self::md_chapters_url(&template, &self.md_base(), manga_id, lang, offset);
             let body = self.http.get(&url, "mangadex").await?;
             let items = Self::parse_mangadex_chapters(&body, manga_id)?;
             if !items.is_empty() || lang.is_none() {
@@ -1880,6 +1925,28 @@ impl GenericScraperAdapter {
         // Fallback tag `td_language:x` (mobile `_normalizeEhentaiTags`).
         .or_else(|| detail_language_tag(&doc))
         .or_else(|| config.default_language.clone());
+        let description = if config.detail_description.selector.trim().is_empty() {
+            None
+        } else {
+            let sel = Self::sel(&config.detail_description.selector)?;
+            let raw = extract(root, &sel, &config.detail_description);
+            (!raw.trim().is_empty()).then_some(raw.trim().to_string())
+        };
+        // Genre → `Tag(id:0, type:tag, count:0)` 1:1 `_resolveTags`.
+        let tags = if config.detail_genres.selector.trim().is_empty() {
+            Vec::new()
+        } else {
+            let sel = Self::sel(&config.detail_genres.selector)?;
+            extract_all(root, &sel, &config.detail_genres)
+                .into_iter()
+                .map(|name| crate::domain::Tag {
+                    id: "0".to_string(),
+                    name,
+                    tag_type: "tag".to_string(),
+                    count: 0,
+                })
+                .collect()
+        };
         Ok(ContentModel {
             id: Self::item_id(url),
             title,
@@ -1888,9 +1955,9 @@ impl GenericScraperAdapter {
             upload_date: None,
             page_count,
             language,
-            tags: Vec::new(),
+            tags,
             available_languages: Vec::new(),
-            description: None,
+            description,
             rating: None,
             favorites: None,
         })
@@ -2138,6 +2205,8 @@ mod tests {
             detail_title: FieldMap::default(),
             detail_cover: FieldMap::default(),
             detail_page_count: FieldMap::default(),
+            detail_description: FieldMap::default(),
+            detail_genres: FieldMap::default(),
             detail_language: FieldMap::default(),
             chapter_selector: "a.go".to_string(),
             chapter_link: FieldMap::attr("a.go", "href"),
@@ -2212,6 +2281,8 @@ mod tests {
             navigation: serde_json::Value::Null,
             search_form: serde_json::Value::Null,
             ui: serde_json::Value::Null,
+            avatar_base_url: None,
+            language_tag_map: std::collections::HashMap::new(),
         };
         GenericRestAdapter::new(http).with_source_file(file)
     }
@@ -2381,6 +2452,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn md_chapters_url_upserts_offset_for_load_more() {
+        // Murni: offset load-more ala mobile `_upsertQueryParam`.
+        let u = GenericRestAdapter::md_chapters_url(
+            MANGADEX_CHAPTERS,
+            MANGADEX_API,
+            "m1",
+            Some("id"),
+            Some(100),
+        );
+        assert!(u.contains("translatedLanguage[]=id"), "{u}");
+        assert!(u.contains("limit=100"), "{u}");
+        assert!(u.ends_with("offset=100"), "{u}");
+        // Halaman pertama: tanpa offset; None/0 sama.
+        for off in [None, Some(0)] {
+            let u0 = GenericRestAdapter::md_chapters_url(
+                MANGADEX_CHAPTERS,
+                MANGADEX_API,
+                "m1",
+                Some("en"),
+                off,
+            );
+            assert!(!u0.contains("offset="), "{u0}");
+        }
+    }
+
     #[cfg(feature = "live-tests")]
     #[test]
     fn live_ehentai_cursor_pagination() {
@@ -2429,7 +2526,7 @@ mod tests {
         assert!(!home.is_empty(), "allGalleries kosong");
         assert!(home[0].language.is_some(), "bahasa hilang: {:?}", home[0]);
         let chapters =
-            tauri::async_runtime::block_on(rest.chapters_mangadex(&items[0].id, None)).unwrap();
+            tauri::async_runtime::block_on(rest.chapters_mangadex(&items[0].id, None, None)).unwrap();
         assert!(!chapters.is_empty(), "chapter kosong untuk {}", items[0].id);
         let internal = chapters.iter().find(|c| !c.is_external);
         if let Some(ch) = internal {
@@ -2459,6 +2556,8 @@ pub struct NhentaiApiAdapter {
     related_tpl: String,
     thumb_host: String,
     img_host: String,
+    avatar_base: String,
+    lang_map: std::collections::HashMap<String, String>,
     attempts: u32,
     retry_delay_ms: u64,
 }
@@ -2505,9 +2604,45 @@ impl NhentaiApiAdapter {
             related_tpl: ep("related", "/api/v2/galleries/{id}/related"),
             thumb_host: host("thumbnail", "https://t.nhentai.net"),
             img_host: host("image", "https://i.nhentai.net"),
+            avatar_base: cfg
+                .avatar_base_url
+                .clone()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "https://i3.nhentai.net".to_string()),
+            lang_map: if cfg.language_tag_map.is_empty() {
+                default_language_tag_map()
+            } else {
+                cfg.language_tag_map.clone()
+            },
             attempts,
             retry_delay_ms,
         }
+    }
+
+    /// Bahasa dari `tag_ids` via `languageTagMap` config (mobile
+    /// `_resolveLanguageTagMap`): cocok PERTAMA urut array, lewati
+    /// "translated", None bila tak cocok (tanpa default).
+    fn lang_of_ids(&self, item: &serde_json::Value) -> Option<String> {
+        let arr = item.get("tag_ids")?.as_array()?;
+        for v in arr {
+            let Some(id) = v
+                .as_u64()
+                .map(|n| n.to_string())
+                .or_else(|| v.as_str().map(str::to_string))
+            else {
+                continue;
+            };
+            let Some(name) = self.lang_map.get(&id).map(|s| s.trim()) else {
+                continue;
+            };
+            if name.is_empty() || name.eq_ignore_ascii_case("translated") {
+                continue;
+            }
+            if let Some(code) = normalize_lang(name) {
+                return Some(code);
+            }
+        }
+        None
     }
 
     async fn fetch(&self, url: &str) -> Result<serde_json::Value, AppError> {
@@ -2557,7 +2692,7 @@ impl NhentaiApiAdapter {
             page_count: item
                 .get("num_pages")
                 .and_then(|v| v.as_u64().map(|n| n as u32)),
-            language: nhentai_lang_of_ids(item),
+            language: self.lang_of_ids(item),
             tags: Vec::new(),
             available_languages: Vec::new(),
             description: None,
@@ -2639,6 +2774,7 @@ impl NhentaiApiAdapter {
             .and_then(|t| {
                 t.get("pretty")
                     .or_else(|| t.get("english"))
+                    .or_else(|| t.get("japanese"))
                     .and_then(|s| s.as_str())
             })
             .map(String::from)
@@ -2692,13 +2828,32 @@ impl NhentaiApiAdapter {
             &[("id", gallery_id)],
         );
         let v = self.fetch(&url).await?;
-        Ok(Self::parse_comments(&v))
+        Ok(self.parse_comments(&v))
+    }
+
+    /// Avatar API sering relatif/protokol-relatif (`/avatars/…`,
+    /// `//i.nhentai.net/…`, `avatars/…`) — resolve absolut 1:1 mobile
+    /// (`comment_model.dart`); host dari `avatarBaseUrl` config.
+    fn resolve_nh_avatar(&self, raw: &str) -> Option<String> {
+        let r = raw.trim();
+        if r.is_empty() {
+            return None;
+        }
+        if let Some(rest) = r.strip_prefix("//") {
+            Some(format!("https://{rest}"))
+        } else if r.starts_with('/') {
+            Some(format!("{}{r}", self.avatar_base))
+        } else if r.starts_with("http") {
+            Some(r.to_string())
+        } else {
+            Some(format!("{}/{r}", self.avatar_base))
+        }
     }
 
     /// Parse `comments[]` → `Comment` (murni). Bentuk per mobile
     /// `NhentaiComment`: `{id, gallery_id, poster{username, avatar_url},
     /// body, post_date}` — toleran: kunci hilang = default mobile.
-    fn parse_comments(v: &serde_json::Value) -> Vec<Comment> {
+    fn parse_comments(&self, v: &serde_json::Value) -> Vec<Comment> {
         v.get("comments")
             .and_then(|c| c.as_array())
             .map(|arr| {
@@ -2727,8 +2882,7 @@ impl NhentaiApiAdapter {
                                 .and_then(|b| b.as_str())
                                 .unwrap_or("")
                                 .to_string(),
-                            avatar_url: Some(str_of("avatar_url"))
-                                .filter(|u| !u.is_empty()),
+                            avatar_url: self.resolve_nh_avatar(&str_of("avatar_url")),
                             post_date: c
                                 .get("post_date")
                                 .and_then(|n| n.as_i64().or_else(|| n.as_u64().map(|n| n as i64))),
@@ -2797,6 +2951,8 @@ mod nhentai_tests {
         const DETAIL: &str = r#"<html><head>
             <meta property="og:image" content="https://cdn.example/cover.jpg"/></head><body>
             <h1>Judul Satu</h1>
+            <div class="series-sinopsis">Sinopsis uji.</div>
+            <div class="genre-list"><a>Aksi</a><a>Petualangan</a></div>
             <div class="chapter-grid">
             <div class="chapter-row"><a class="chapter-link" href="/chapter/c1/">
             <span class="chap-num">Chapter 1</span><span class="chap-date">kemarin</span></a></div>
@@ -2818,6 +2974,8 @@ mod nhentai_tests {
                 "detail": "/ak-detail"},
             "selectors": {"detail": {"fields": {
                     "title": {"selector": "h1"},
+                    "description": {"selector": ".series-sinopsis"},
+                    "genres": {"selector": ".genre-list a", "multi": true},
                     "coverUrl": {"selector": "meta[property='og:image']", "attribute": "content"}},
                 "chapters": {"container": ".chapter-grid .chapter-row", "fields": {
                     "id": {"selector": "a.chapter-link", "attribute": "href", "transform": "slug"},
@@ -2846,6 +3004,12 @@ mod nhentai_tests {
         let detail = GenericScraperAdapter::parse_detail(DETAIL, &detail_url, &cfg).unwrap();
         assert_eq!(detail.title, "Judul Satu");
         assert_eq!(detail.cover_url, "https://cdn.example/cover.jpg");
+        // Config-driven 1:1 mobile: description + genres→tags.
+        assert_eq!(detail.description.as_deref(), Some("Sinopsis uji."));
+        assert_eq!(detail.tags.len(), 2);
+        assert_eq!(detail.tags[0].name, "Aksi");
+        assert_eq!(detail.tags[1].name, "Petualangan");
+        assert!(detail.tags.iter().all(|t| t.tag_type == "tag" && t.count == 0));
         let chapters =
             GenericScraperAdapter::parse_chapters(DETAIL, &detail_url, "x", &cfg).unwrap();
         assert_eq!(chapters.len(), 2);
@@ -3080,7 +3244,7 @@ mod nhentai_tests {
             ]}"#,
         )
         .unwrap();
-        let out = NhentaiApiAdapter::parse_comments(&v);
+        let out = test_adapter().parse_comments(&v);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].id, "7");
         assert_eq!(out[0].username, "suke");
@@ -3094,6 +3258,65 @@ mod nhentai_tests {
         assert_eq!(out[1].id, "8");
         assert_eq!(out[1].username, "");
         assert!(out[1].avatar_url.is_none());
+    }
+
+    #[test]
+    fn nhentai_avatar_resolves_all_mobile_shapes() {
+        // Murni 1:1 `comment_model.dart`: 4 bentuk avatar API.
+        // (adapter uji tanpa `avatarBaseUrl` → fallback config bundel i3).
+        let a = test_adapter();
+        let r = |s: &str| a.resolve_nh_avatar(s);
+        assert_eq!(
+            r("//i.nhentai.net/avatars/1.png").as_deref(),
+            Some("https://i.nhentai.net/avatars/1.png")
+        );
+        assert_eq!(
+            r("/avatars/1.png").as_deref(),
+            Some("https://i3.nhentai.net/avatars/1.png")
+        );
+        assert_eq!(
+            r("avatars/1.png").as_deref(),
+            Some("https://i3.nhentai.net/avatars/1.png")
+        );
+        assert_eq!(
+            r("https://a.example/u.png").as_deref(),
+            Some("https://a.example/u.png")
+        );
+        assert!(r("").is_none());
+        assert!(r("   ").is_none());
+    }
+
+    #[test]
+    fn nhentai_config_drives_lang_map_and_avatar_base() {
+        // Config instal (bukan hardcode) menang: map kustom + base kustom.
+        let cfg: SourceFile = serde_json::from_str(
+            r#"{"source": "nhentai",
+                "avatarBaseUrl": "https://av.custom.net",
+                "languageTagMap": {"777": "indonesian", "888": "translated"},
+                "network": {"rateLimit": {"minDelayMs": 0}}}"#,
+        )
+        .unwrap();
+        let a = NhentaiApiAdapter::from_config(
+            HttpClientManager::without_proxy().unwrap(),
+            &cfg,
+        );
+        assert_eq!(
+            a.resolve_nh_avatar("/a/1.png").as_deref(),
+            Some("https://av.custom.net/a/1.png")
+        );
+        // Cocok pertama urut array; "translated" dilewati.
+        let v: serde_json::Value = serde_json::from_str(r#"{"tag_ids": [888, 5, 777]}"#).unwrap();
+        assert_eq!(a.lang_of_ids(&v).as_deref(), Some("id"));
+        // Tanpa cocok → None (mobile: tanpa default).
+        let v2: serde_json::Value = serde_json::from_str(r#"{"tag_ids": [5]}"#).unwrap();
+        assert!(a.lang_of_ids(&v2).is_none());
+        let v3: serde_json::Value = serde_json::from_str("{}").unwrap();
+        assert!(a.lang_of_ids(&v3).is_none());
+        // Fallback bundel tetap untuk config tanpa map (kasus SEARCH_JSON).
+        let b = test_adapter();
+        let v4: serde_json::Value = serde_json::from_str(SEARCH_JSON).unwrap();
+        let first = &NhentaiApiAdapter::items_of(&v4)[0];
+        assert_eq!(b.lang_of_ids(first).as_deref(), Some("en"));
     }
 
     #[test]

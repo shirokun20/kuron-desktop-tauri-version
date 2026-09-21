@@ -10,6 +10,8 @@
   import MainGridCard from "../components/MainGridCard.svelte";
   import type { Chapter, Comment, Content, Tag } from "../domain/types";
   import { libraryStore } from "../stores/library.svelte";
+  import { themeStore } from "../stores/theme.svelte";
+  import { tagColor } from "../theme/tokens";
   import {
     buildChapterLanes,
     selectedLaneChapters,
@@ -30,6 +32,8 @@
 
   /** Preview rail: 20 pertama, sisanya via sheet (mobile: bottom sheet). */
   const RAIL_PREVIEW = 20;
+  /** Page size chapter MD (`limit=100` di template endpoint Rust). */
+  const CHAPTER_LIMIT = 100;
   /** Urutan grup tag: tipe umum dulu, sisanya alfabet. */
   const TAG_GROUP_ORDER = [
     "category",
@@ -46,13 +50,20 @@
   ];
 
   let fetched = $state<Content | null>(null);
-  let chapters = $state<Chapter[]>([]);
+  /** Feed per bahasa (kunci = kode atau "" untuk fetch default). */
+  let chapterCache = $state<Record<string, Chapter[]>>({});
   let laneKey = $state<string | null>(null);
   let related = $state<Content[]>([]);
   let comments = $state<Comment[]>([]);
   let loading = $state(true);
   let chaptersLoading = $state(false);
   let sheetOpen = $state(false);
+  /** Bahasa yang tuntas (< limit saat fetch) ala `_fullyLoadedLanguages`. */
+  let fullyLoaded = $state(new Set<string>());
+  let loadingMore = $state(false);
+  let loadMoreError = $state<string | null>(null);
+  /** Avatar komentar yang 404 → tampil inisial (bukan ikon rusak). */
+  let deadAvatars = $state(new Set<string>());
   let error = $state<string | null>(null);
 
   function fmtDate(epochSecs: bigint | number | null | undefined): string {
@@ -75,18 +86,32 @@
   let fav = $derived(libraryStore.isFav(content.id));
   // Prop sebagai tampilan awal; hasil fetch menimpanya saat tiba.
   let detail = $derived(fetched ?? content);
+  let cacheKey = $derived(laneKey ?? "");
+  let feed = $derived(chapterCache[cacheKey] ?? []);
   // Chip bahasa dari detail (mobile); kosong → grouping feed (scraper).
   let langChips = $derived(
     detail.available_languages.length > 0
       ? detail.available_languages
-      : [...new Set(chapters.map((c) => c.language).filter((l) => l != null))],
+      : [...new Set(feed.map((c) => c.language).filter((l) => l != null))],
   );
-  let lanes = $derived(buildChapterLanes(chapters, laneKey));
+  let lanes = $derived(buildChapterLanes(feed, laneKey));
   let visible = $derived(selectedLaneChapters(lanes));
   let preview = $derived(visible.slice(0, RAIL_PREVIEW));
+  // Load-more: khusus sumber ber-offset (mobile: mangadex/mangafire).
+  let canLoadMore = $derived(
+    content.source_id === "mangadex" &&
+      visible.length > 0 &&
+      !fullyLoaded.has(cacheKey),
+  );
   let tagGroups = $derived.by(() => {
     const groups = new Map<string, Tag[]>();
+    // Dedup `type:name` ala `_buildTagsSection` mobile (genre scraper
+    // bisa dobel; sekaligus menjamin kunci each unik).
+    const seen = new Set<string>();
     for (const t of detail.tags) {
+      const key = `${t.tag_type}:${t.name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       const list = groups.get(t.tag_type);
       if (list) list.push(t);
       else groups.set(t.tag_type, [t]);
@@ -109,12 +134,32 @@
     return langs.includes("en") ? "en" : langs[0];
   }
 
+  function storeFeed(lang: string | null, list: Chapter[], append: boolean) {
+    const key = lang ?? "";
+    const sorted = [...list].sort((a, b) => a.order - b.order);
+    if (!append) {
+      chapterCache[key] = sorted;
+    } else {
+      const base = chapterCache[key] ?? [];
+      const seen = new Set(base.map((c) => c.id));
+      chapterCache[key] = [...base, ...sorted.filter((c) => !seen.has(c.id))].sort(
+        (a, b) => a.order - b.order,
+      );
+    }
+    // < limit = tuntas (mobile `_fullyLoadedLanguages`); berlaku juga
+    // untuk fetch awal supaya tombol tak muncul sia-sia.
+    if (list.length < CHAPTER_LIMIT) {
+      fullyLoaded.add(key);
+      fullyLoaded = new Set(fullyLoaded);
+    }
+  }
+
   async function loadChapters(lang: string | null, cancelled: () => boolean) {
     chaptersLoading = true;
     try {
       const ch = await api.chapters(content.id, content.source_id, lang);
       if (cancelled()) return;
-      chapters = [...ch].sort((a, b) => a.order - b.order);
+      storeFeed(lang, ch, false);
     } finally {
       if (!cancelled()) chaptersLoading = false;
     }
@@ -123,9 +168,32 @@
   function selectLang(lang: string) {
     if (lang === laneKey || chaptersLoading) return;
     laneKey = lang;
+    loadMoreError = null;
+    if (chapterCache[lang]) return;
     loadChapters(lang, () => false).catch(() => {
       // gagal ganti bahasa = rail diam (bukan error merah)
     });
+  }
+
+  /** Load-more 1:1 `_loadMoreChapters`: offset = jumlah lane tampil. */
+  async function loadMore() {
+    if (loadingMore || !canLoadMore) return;
+    loadingMore = true;
+    loadMoreError = null;
+    try {
+      const lang = lanes.selectedKey;
+      const next = await api.chapters(
+        content.id,
+        content.source_id,
+        lang,
+        visible.length,
+      );
+      storeFeed(lang, next, true);
+    } catch {
+      loadMoreError = "Gagal muat — coba lagi.";
+    } finally {
+      loadingMore = false;
+    }
   }
 
   $effect(() => {
@@ -133,11 +201,14 @@
     loading = true;
     error = null;
     fetched = null;
-    chapters = [];
+    chapterCache = {};
     laneKey = null;
     related = [];
     comments = [];
     sheetOpen = false;
+    fullyLoaded = new Set();
+    loadingMore = false;
+    loadMoreError = null;
     let cancelled = false;
     (async () => {
       try {
@@ -149,7 +220,7 @@
         laneKey = lang;
         const ch = await api.chapters(c.id, c.source_id, lang);
         if (cancelled) return;
-        chapters = [...ch].sort((a, b) => a.order - b.order);
+        storeFeed(lang, ch, false);
         // Ala detail cubit mobile: terkait + komentar paralel non-blocking
         // setelah detail tampil; gagal = seksi absen (bukan error merah).
         api
@@ -238,8 +309,8 @@
         {#if detail.upload_date}
           <span class="badge">{detail.upload_date}</span>
         {/if}
-        {#if chapters.length > 0}
-          <span class="badge chapters">{chapters.length} bab</span>
+        {#if visible.length > 0}
+          <span class="badge chapters">{visible.length} bab</span>
         {/if}
       </div>
       <div class="actions">
@@ -271,12 +342,24 @@
             <div class="tag-group">
               <span class="tag-group-label">{group}</span>
               <div class="tags">
-                {#each tags as tag (tag.id)}
+                {#each tags as tag, i (`${tag.tag_type}:${tag.name}:${i}`)}
+                  {@const c = tagColor(tag.tag_type, themeStore.darkMode)}
                   <span
                     class="tag"
+                    style:color={c}
+                    style:border-color={`color-mix(in srgb, ${c} 80%, transparent)`}
+                    style:background={`color-mix(in srgb, ${c} 10%, transparent)`}
                     title={tag.count > 0n ? `${tag.count}×` : group}
                   >
                     {tag.name}
+                    {#if tag.count > 0n}
+                      <span
+                        class="tag-count"
+                        style:color={`color-mix(in srgb, ${c} 70%, transparent)`}
+                      >
+                        {fmtCompact(tag.count)}
+                      </span>
+                    {/if}
                   </span>
                 {/each}
               </div>
@@ -301,7 +384,7 @@
         <ul class="comments">
           {#each comments as cm (cm.id)}
             <li class="comment">
-              {#if cm.avatar_url}
+              {#if cm.avatar_url && !deadAvatars.has(cm.id)}
                 <img
                   class="avatar"
                   src={cm.avatar_url}
@@ -309,6 +392,10 @@
                   loading="lazy"
                   draggable="false"
                   referrerpolicy="no-referrer"
+                  onerror={() => {
+                    deadAvatars.add(cm.id);
+                    deadAvatars = new Set(deadAvatars);
+                  }}
                 />
               {:else}
                 <span class="avatar fallback">
@@ -388,45 +475,64 @@
     onclick={() => (sheetOpen = false)}
   ></div>
   <div class="sheet" role="dialog" aria-modal="true" aria-label="Semua bab">
-    <div class="sheet-head">
-      <h2>Semua bab ({visible.length})</h2>
-      <button
-        class="ghost"
-        aria-label="Tutup daftar bab"
-        onclick={() => (sheetOpen = false)}
-      >
-        ✕
-      </button>
-    </div>
-    {#if langChips.length > 1}
-      <div class="lanes sheet-lanes" role="tablist" aria-label="Bahasa bab">
-        {#each langChips as lang (lang)}
-          <button
-            class="lane"
-            class:on={lanes.selectedKey === lang}
-            role="tab"
-            aria-selected={lanes.selectedKey === lang}
-            onclick={() => selectLang(lang)}
-          >
-            {langFlag(lang)}
-            {langLabel(lang)}
-          </button>
-        {/each}
+    <div class="sheet-inner">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <h2>Semua bab ({visible.length})</h2>
+        <button
+          class="ghost"
+          aria-label="Tutup daftar bab"
+          onclick={() => (sheetOpen = false)}
+        >
+          ✕
+        </button>
       </div>
-    {/if}
-    <ul class="rows sheet-rows">
-      {#each visible as ch (ch.id)}
-        <li>
-          <button class="row" onclick={() => openChapter(ch)}>
-            <span class="num">{ch.order}</span>
-            <span class="title">{ch.title || `Bab ${ch.order}`}</span>
-            {#if ch.is_external}
-              <span class="ext">baca di situs ↗</span>
-            {/if}
-          </button>
-        </li>
-      {/each}
-    </ul>
+      {#if langChips.length > 1}
+        <div class="lanes sheet-lanes" role="tablist" aria-label="Bahasa bab">
+          {#each langChips as lang (lang)}
+            <button
+              class="lane"
+              class:on={lanes.selectedKey === lang}
+              role="tab"
+              aria-selected={lanes.selectedKey === lang}
+              onclick={() => selectLang(lang)}
+            >
+              {langFlag(lang)}
+              {langLabel(lang)}
+            </button>
+          {/each}
+        </div>
+      {/if}
+      <ul class="rows sheet-rows">
+        {#each visible as ch (ch.id)}
+          <li>
+            <button class="row" onclick={() => openChapter(ch)}>
+              <span class="num">{ch.order}</span>
+              <span class="title">{ch.title || `Bab ${ch.order}`}</span>
+              {#if ch.is_external}
+                <span class="ext">baca di situs ↗</span>
+              {/if}
+            </button>
+          </li>
+        {/each}
+      </ul>
+      {#if canLoadMore || loadMoreError}
+        <div class="sheet-more">
+          {#if loadMoreError}
+            <p class="err">{loadMoreError}</p>
+          {/if}
+          {#if canLoadMore}
+            <button
+              class="ghost wide"
+              disabled={loadingMore}
+              onclick={loadMore}
+            >
+              {loadingMore ? "Memuat…" : "Muat lebih banyak"}
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
   </div>
 {/if}
 
@@ -717,12 +823,20 @@
     gap: 6px;
   }
   .tag {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
     font-size: 12px;
     font-weight: 600;
     padding: 4px 12px;
-    border-radius: 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
     background: var(--muted);
-    color: var(--muted-foreground);
+  }
+  .tag-count {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
   }
   h2.section {
     margin: 28px 0 14px;
@@ -801,7 +915,7 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
-  /* Sheet daftar penuh: panel kanan (desktop) / bottom sheet (sempit). */
+  /* Sheet daftar penuh: bottom sheet ala mobile di semua ukuran. */
   .sheet-backdrop {
     position: fixed;
     inset: 0;
@@ -810,18 +924,44 @@
   }
   .sheet {
     position: fixed;
-    top: 0;
+    left: 0;
     right: 0;
     bottom: 0;
     z-index: 71;
-    width: min(480px, 92vw);
+    max-height: 84vh;
+    display: flex;
+    justify-content: center;
     background: var(--background);
-    border-left: 1px solid var(--border);
-    box-shadow: -12px 0 40px rgb(0 0 0 / 0.4);
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -12px 40px rgb(0 0 0 / 0.4);
+  }
+  .sheet-inner {
+    width: 100%;
+    max-width: 760px;
     display: flex;
     flex-direction: column;
-    padding: 20px;
+    min-height: 0;
+    padding: 10px 20px 20px;
     gap: 14px;
+  }
+  .sheet-grip {
+    width: 44px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border);
+    margin: 0 auto;
+  }
+  .sheet-more {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .sheet-more .err {
+    margin: 0;
+    text-align: center;
+    font-size: 13px;
   }
   .sheet-head {
     display: flex;
@@ -867,18 +1007,6 @@
     .chapters-card {
       position: static;
       max-height: none;
-    }
-    .sheet {
-      top: auto;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      width: auto;
-      max-height: 82vh;
-      border-left: 0;
-      border-top: 1px solid var(--border);
-      border-radius: 16px 16px 0 0;
-      box-shadow: 0 -12px 40px rgb(0 0 0 / 0.4);
     }
   }
 </style>

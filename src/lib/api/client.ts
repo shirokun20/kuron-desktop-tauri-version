@@ -58,11 +58,13 @@ export const api = {
     contentId: string,
     source?: string,
     language?: string | null,
+    offset?: number | null,
   ): Promise<Chapter[]> =>
     call("cmd_get_chapters", {
       contentId,
       source: source ?? null,
       language: language ?? null,
+      offset: offset ?? null,
     }),
   pageImages: (chapterId: string, source?: string): Promise<PageImageResult[]> =>
     call("cmd_get_page_images", { chapterId, source: source ?? null }),

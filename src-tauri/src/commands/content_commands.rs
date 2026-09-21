@@ -357,6 +357,7 @@ pub async fn cmd_get_chapters(
     content_id: String,
     source: Option<String>,
     language: Option<String>,
+    offset: Option<u32>,
 ) -> Result<Vec<Chapter>, String> {
     // Ikut sumber aktif seperti search/home_feed (dulu mock-only).
     let repo = match source.as_deref() {
@@ -366,7 +367,7 @@ pub async fn cmd_get_chapters(
         _ => state.content_repo.clone(),
     };
     GetChaptersUseCase::new(repo)
-        .execute(&content_id, language.as_deref())
+        .execute(&content_id, language.as_deref(), offset)
         .await
         .map_err(|e| e.to_string())
 }
@@ -450,7 +451,7 @@ mod tests {
         .unwrap();
         assert_eq!(found.len(), 8);
         assert!(tauri::async_runtime::block_on(
-            GetChaptersUseCase::new(MockContentRepository).execute("m1", None)
+            GetChaptersUseCase::new(MockContentRepository).execute("m1", None, None)
         )
         .unwrap()
         .is_empty());

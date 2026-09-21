@@ -127,6 +127,12 @@ pub struct SourceFile {
     /// apa adanya; ekstraksi via `ui_icon_path()`/`ui_display_name()`.
     #[serde(default, rename = "ui")]
     pub ui: serde_json::Value,
+    /// Host absolut avatar (`avatarBaseUrl`, mis. nhentai `i3`).
+    #[serde(default, rename = "avatarBaseUrl")]
+    pub avatar_base_url: Option<String>,
+    /// Peta id tag → nama bahasa (`languageTagMap`, kunci string JSON).
+    #[serde(default, rename = "languageTagMap")]
+    pub language_tag_map: HashMap<String, String>,
 }
 
 impl SourceFile {
