@@ -1,11 +1,11 @@
 // Library store — riwayat + favorit SQLite backend (8.3).
 // Mode web: backend tak ada → kosong senyap (pola contentStore.offline).
 import { api, WEB_OFFLINE_MSG } from "../api/client";
-import type { Content, HistoryEntry } from "../domain/types";
+import type { Content, HistoryItem } from "../domain/types";
 
 class LibraryStore {
   favorites = $state<Content[]>([]);
-  history = $state<HistoryEntry[]>([]);
+  history = $state<HistoryItem[]>([]);
   loading = $state(false);
   error = $state<string | null>(null);
 
@@ -60,13 +60,25 @@ class LibraryStore {
   }
 
   /** Catat posisi baca (dipakai reader/detail Fase 5; API siap kini). */
-  async recordHistory(contentId: string, position: number) {
+  async recordHistory(content: Content, position: number) {
     try {
-      await api.historyRecord(contentId, position);
+      await api.historyRecord(content, position);
     } catch (e) {
       if (!(e instanceof Error && e.message === WEB_OFFLINE_MSG)) {
         this.error = `gagal catat riwayat: ${e}`;
       }
+    }
+  }
+
+  async removeHistory(contentId: string) {
+    this.error = null;
+    const before = this.history;
+    this.history = before.filter((h) => h.content_id !== contentId);
+    try {
+      await api.historyRemove(contentId);
+    } catch (e) {
+      this.history = before;
+      this.error = `gagal hapus riwayat: ${e}`;
     }
   }
 

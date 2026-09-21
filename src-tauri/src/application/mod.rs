@@ -9,6 +9,7 @@ pub use usecases::{
     get_chapters::GetChaptersUseCase, get_content_detail::GetContentDetailUseCase,
     get_home_feed::GetHomeFeedUseCase, get_page_images::GetPageImagesUseCase,
     list_favorites::ListFavoritesUseCase, list_history::ListHistoryUseCase,
-    record_history::RecordHistoryUseCase, say_hello::SayHelloUseCase,
+    record_history::RecordHistoryUseCase, remove_history::RemoveHistoryUseCase,
+    say_hello::SayHelloUseCase,
     search_content::SearchContentUseCase, set_favorite::SetFavoriteUseCase,
 };

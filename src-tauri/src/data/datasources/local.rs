@@ -171,37 +171,73 @@ impl SqliteDs {
         Ok(())
     }
 
-    pub fn record_history(&self, content_id: &str, position: i64) -> Result<(), AppError> {
+    pub fn record_history(&self, content: &Content, position: i64) -> Result<(), AppError> {
+        // Snapshot display dulu (ala `History` mobile yang membawa
+        // `title`/`coverUrl`), lalu baris riwayat. Hapus + sisip (ala
+        // `insert replace` sqflite): rekaman ulang selalu jadi baris
+        // terbaru walau dalam detik yang sama.
+        self.save_content(content)?;
         let conn = self
             .conn
             .lock()
             .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
-        // Hapus + sisip (ala `insert replace` sqflite mobile): rekaman ulang
-        // selalu jadi baris terbaru walau dalam detik yang sama.
         conn.execute(
             "DELETE FROM history WHERE content_id = ?1",
-            params![content_id],
+            params![content.id],
         )?;
         conn.execute(
             "INSERT INTO history (content_id, position, updated_at) VALUES (?1, ?2, ?3)",
-            params![content_id, position, now_secs()],
+            params![content.id, position, now_secs()],
         )?;
         Ok(())
     }
 
-    pub fn list_history(&self, limit: i64) -> Result<Vec<(String, i64)>, AppError> {
+    /// Riwayat + snapshot konten + posisi + waktu untuk daftar UI.
+    /// `is_favorite` diisi via `EXISTS` agar akurat per baris.
+    pub fn list_history_contents(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<(Content, i64, i64)>, AppError> {
         let conn = self
             .conn
             .lock()
             .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         let mut stmt = conn.prepare(
-            "SELECT content_id, position FROM history
-             ORDER BY updated_at DESC, rowid DESC LIMIT ?1",
+            "SELECT c.id, c.title, c.cover_url, c.source_id, c.upload_date,
+                    EXISTS(SELECT 1 FROM favorites f WHERE f.content_id = c.id),
+                    h.position, h.updated_at
+             FROM history h JOIN contents c ON c.id = h.content_id
+             ORDER BY h.updated_at DESC, h.rowid DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            Ok((
+                Content {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    cover_url: row.get(2)?,
+                    source_id: row.get(3)?,
+                    upload_date: row.get(4)?,
+                    is_favorite: row.get::<_, i32>(5)? != 0,
+                    page_count: None,
+                    language: None,
+                },
+                row.get::<_, i64>(6)?,
+                row.get::<_, i64>(7)?,
+            ))
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    pub fn remove_history(&self, content_id: &str) -> Result<(), AppError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
+        conn.execute(
+            "DELETE FROM history WHERE content_id = ?1",
+            params![content_id],
+        )?;
+        Ok(())
     }
 
     pub fn clear_history(&self) -> Result<(), AppError> {
@@ -639,12 +675,16 @@ mod tests {
             external_url: None,
         }])
         .unwrap();
-        // history
-        ds.record_history("m1", 5).unwrap();
-        let hist = ds.list_history(10).unwrap();
-        assert_eq!(hist, vec![("m1".to_string(), 5)]);
+        // history (+ snapshot display untuk daftar UI)
+        ds.record_history(&sample_content(), 5).unwrap();
+        let hist = ds.list_history_contents(10).unwrap();
+        assert_eq!(hist.len(), 1);
+        assert_eq!(hist[0].0.id, "m1");
+        assert_eq!(hist[0].0.title, "Sample");
+        assert_eq!(hist[0].1, 5);
+        assert!(hist[0].2 > 0);
         ds.clear_history().unwrap();
-        assert!(ds.list_history(10).unwrap().is_empty());
+        assert!(ds.list_history_contents(10).unwrap().is_empty());
         // favorites
         ds.set_favorite("m1", true).unwrap();
         assert_eq!(ds.list_favorites().unwrap(), vec!["m1".to_string()]);

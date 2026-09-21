@@ -12,7 +12,7 @@ use crate::{
     },
     domain::{
         BubbleBox, Chapter, Content, DownloadState, DownloadTask, GlossaryEntry, Hello,
-        HistoryEntry, Language, PageImageResult, PageTranslation, ReaderSettings, ReadingMode,
+        HistoryItem, Language, PageImageResult, PageTranslation, ReaderSettings, ReadingMode,
         SearchFilter, SourceId,
     },
 };
@@ -42,7 +42,7 @@ fn export_types_ts() {
         ManifestMeta::decl(&cfg),
         ZipSourceCandidate::decl(&cfg),
         ZipPreview::decl(&cfg),
-        HistoryEntry::decl(&cfg),
+        HistoryItem::decl(&cfg),
     ];
 
     let mut out = String::from(
@@ -64,5 +64,5 @@ fn export_types_ts() {
     assert!(out.contains("type ExtensionManifest ="));
     assert!(out.contains("type ZipPreview ="));
     assert!(out.contains("type ZipSourceCandidate ="));
-    assert!(out.contains("type HistoryEntry ="));
+    assert!(out.contains("type HistoryItem ="));
 }

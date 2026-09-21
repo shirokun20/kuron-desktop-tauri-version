@@ -2,7 +2,7 @@
 
 use crate::{
     core::AppError,
-    domain::repositories::LibraryRepository,
+    domain::{repositories::LibraryRepository, Content},
 };
 
 pub struct RecordHistoryUseCase<R> {
@@ -14,7 +14,7 @@ impl<R: LibraryRepository> RecordHistoryUseCase<R> {
         Self { repo }
     }
 
-    pub async fn execute(&self, content_id: &str, position: i64) -> Result<(), AppError> {
-        self.repo.record_history(content_id, position).await
+    pub async fn execute(&self, content: &Content, position: i64) -> Result<(), AppError> {
+        self.repo.record_history(content, position).await
     }
 }

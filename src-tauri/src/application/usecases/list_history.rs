@@ -2,7 +2,7 @@
 
 use crate::{
     core::AppError,
-    domain::{repositories::LibraryRepository, HistoryEntry},
+    domain::{repositories::LibraryRepository, HistoryItem},
 };
 
 pub struct ListHistoryUseCase<R> {
@@ -14,7 +14,7 @@ impl<R: LibraryRepository> ListHistoryUseCase<R> {
         Self { repo }
     }
 
-    pub async fn execute(&self, limit: i64) -> Result<Vec<HistoryEntry>, AppError> {
+    pub async fn execute(&self, limit: i64) -> Result<Vec<HistoryItem>, AppError> {
         self.repo.list_history(limit).await
     }
 }

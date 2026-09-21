@@ -12,7 +12,7 @@ pub use content_commands::{
 };
 pub use library_commands::{
     cmd_favorite_list, cmd_favorite_set, cmd_history_clear, cmd_history_list,
-    cmd_history_record, cmd_library_clear,
+    cmd_history_record, cmd_history_remove, cmd_library_clear,
 };
 pub use extension_commands::{
     cmd_extension_install, cmd_extension_install_staged_zip, cmd_extension_install_zip_file,

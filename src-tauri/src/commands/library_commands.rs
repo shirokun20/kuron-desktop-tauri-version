@@ -6,20 +6,20 @@ use tauri::State;
 use crate::{
     application::{
         ClearHistoryUseCase, ClearLibraryUseCase, ListFavoritesUseCase, ListHistoryUseCase,
-        RecordHistoryUseCase, SetFavoriteUseCase,
+        RecordHistoryUseCase, RemoveHistoryUseCase, SetFavoriteUseCase,
     },
     core::AppState,
-    domain::{Content, HistoryEntry},
+    domain::{Content, HistoryItem},
 };
 
 #[tauri::command]
 pub async fn cmd_history_record(
     state: State<'_, AppState>,
-    content_id: String,
+    content: Content,
     position: i64,
 ) -> Result<(), String> {
     RecordHistoryUseCase::new(state.library.clone())
-        .execute(&content_id, position)
+        .execute(&content, position)
         .await
         .map_err(|e| e.to_string())
 }
@@ -28,9 +28,20 @@ pub async fn cmd_history_record(
 pub async fn cmd_history_list(
     state: State<'_, AppState>,
     limit: Option<i64>,
-) -> Result<Vec<HistoryEntry>, String> {
+) -> Result<Vec<HistoryItem>, String> {
     ListHistoryUseCase::new(state.library.clone())
         .execute(limit.unwrap_or(50).max(1))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn cmd_history_remove(
+    state: State<'_, AppState>,
+    content_id: String,
+) -> Result<(), String> {
+    RemoveHistoryUseCase::new(state.library.clone())
+        .execute(&content_id)
         .await
         .map_err(|e| e.to_string())
 }

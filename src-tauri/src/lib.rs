@@ -11,7 +11,8 @@ use commands::{
     cmd_extension_install_zip_file, cmd_extension_manifest, cmd_extension_preview_zip_url,
     cmd_extension_uninstall, cmd_favorite_list, cmd_favorite_set, cmd_get_chapters, cmd_get_detail,
     cmd_get_page_images, cmd_hello_world, cmd_history_clear, cmd_history_list, cmd_history_record,
-    cmd_home_feed, cmd_library_clear, cmd_search, cmd_search_form, cmd_sources_list, cmd_tag_query,
+    cmd_history_remove, cmd_home_feed, cmd_library_clear, cmd_search, cmd_search_form,
+    cmd_sources_list, cmd_tag_query,
 };
 use core::{logger, AppState};
 use tauri::{
@@ -183,6 +184,7 @@ pub fn run() {
             cmd_extension_install_staged_zip,
             cmd_history_record,
             cmd_history_list,
+            cmd_history_remove,
             cmd_history_clear,
             cmd_favorite_set,
             cmd_favorite_list,

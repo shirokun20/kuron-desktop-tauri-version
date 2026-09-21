@@ -55,7 +55,7 @@ export type ZipSourceCandidate = { id: string, version: string, displayName: str
 
 export type ZipPreview = { token: string, sources: Array<ZipSourceCandidate>, };
 
-export type HistoryEntry = { content_id: string, 
+export type HistoryItem = { content_id: string, title: string, cover_url: string, source_id: string, 
 /**
  * Halaman terakhir dibaca (1-based, ala `History.lastPage` mobile).
  */

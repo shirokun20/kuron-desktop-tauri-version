@@ -5,7 +5,7 @@ import type {
   Content,
   ExtensionManifest,
   Hello,
-  HistoryEntry,
+  HistoryItem,
   InstalledSource,
   ZipPreview,
 } from "../domain/types";
@@ -64,10 +64,12 @@ export const api = {
     call("cmd_extension_install_zip_file"),
   extInstallStagedZip: (token: string, selected: string[]): Promise<string[]> =>
     call("cmd_extension_install_staged_zip", { token, selected }),
-  historyRecord: (contentId: string, position: number): Promise<void> =>
-    call("cmd_history_record", { contentId, position }),
-  historyList: (limit?: number): Promise<HistoryEntry[]> =>
+  historyRecord: (content: Content, position: number): Promise<void> =>
+    call("cmd_history_record", { content, position }),
+  historyList: (limit?: number): Promise<HistoryItem[]> =>
     call("cmd_history_list", { limit: limit ?? null }),
+  historyRemove: (contentId: string): Promise<void> =>
+    call("cmd_history_remove", { contentId }),
   historyClear: (): Promise<void> => call("cmd_history_clear"),
   favoriteSet: (content: Content, fav: boolean): Promise<void> =>
     call("cmd_favorite_set", { content, fav }),

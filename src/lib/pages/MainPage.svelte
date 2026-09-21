@@ -15,6 +15,7 @@
   import ThemeToggle from "../components/ThemeToggle.svelte";
   import MainFeaturedCard from "../components/MainFeaturedCard.svelte";
   import MainGridCard from "../components/MainGridCard.svelte";
+  import LibraryPage from "./LibraryPage.svelte";
 
   const ICONS = {
     home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>',
@@ -158,6 +159,9 @@
       {#if overlayStore.error}
         <p class="err">{overlayStore.error}</p>
       {/if}
+      {#if activeNav === "favorites" || activeNav === "history"}
+        <LibraryPage tab={activeNav} />
+      {:else}
       {#if contentStore.loading && contentStore.feed.length === 0}
         <p class="muted">Memuat feed…</p>
       {/if}
@@ -243,6 +247,7 @@
           {/if}
         </div>
       </section>
+      {/if}
       {/if}
     </main>
   </div>

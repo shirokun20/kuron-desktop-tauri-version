@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use crate::{
     core::AppError,
     data::datasources::local::SqliteDs,
-    domain::{repositories::LibraryRepository, Content, HistoryEntry},
+    domain::{repositories::LibraryRepository, Content, HistoryItem},
 };
 
 pub struct LibraryRepositoryImpl {
@@ -33,25 +33,30 @@ impl LibraryRepositoryImpl {
 impl LibraryRepository for LibraryRepositoryImpl {
     async fn record_history(
         &self,
-        content_id: &str,
+        content: &Content,
         position: i64,
     ) -> Result<(), AppError> {
-        self.db.record_history(content_id, position)
+        self.db.record_history(content, position)
     }
 
-    async fn list_history(&self, limit: i64) -> Result<Vec<HistoryEntry>, AppError> {
+    async fn list_history(&self, limit: i64) -> Result<Vec<HistoryItem>, AppError> {
         Ok(self
             .db
-            .list_history(limit)?
+            .list_history_contents(limit)?
             .into_iter()
-            .map(|(content_id, position)| HistoryEntry {
-                content_id,
+            .map(|(c, position, updated_at)| HistoryItem {
+                content_id: c.id,
+                title: c.title,
+                cover_url: c.cover_url,
+                source_id: c.source_id,
                 position,
-                // `updated_at` tidak dikembalikan query daftar (cukup urutan);
-                // pembaca detail memakai `getHistoryEntry` (nyusul Fase 5).
-                updated_at: 0,
+                updated_at,
             })
             .collect())
+    }
+
+    async fn remove_history(&self, content_id: &str) -> Result<(), AppError> {
+        self.db.remove_history(content_id)
     }
 
     async fn clear_history(&self) -> Result<(), AppError> {
@@ -115,14 +120,21 @@ mod tests {
     #[test]
     fn history_records_latest_first_and_clears() {
         let repo = LibraryRepositoryImpl::open_in_memory().unwrap();
-        tauri::async_runtime::block_on(repo.record_history("m1", 5)).unwrap();
-        tauri::async_runtime::block_on(repo.record_history("m2", 1)).unwrap();
+        tauri::async_runtime::block_on(repo.record_history(&content("m1"), 5)).unwrap();
+        tauri::async_runtime::block_on(repo.record_history(&content("m2"), 1)).unwrap();
         // Upsert: posisi + urutan terbaru diperbarui.
-        tauri::async_runtime::block_on(repo.record_history("m1", 9)).unwrap();
+        tauri::async_runtime::block_on(repo.record_history(&content("m1"), 9)).unwrap();
         let hist = tauri::async_runtime::block_on(repo.list_history(10)).unwrap();
         assert_eq!(hist.len(), 2);
         assert_eq!(hist[0].content_id, "m1");
+        assert_eq!(hist[0].title, "Judul m1");
         assert_eq!(hist[0].position, 9);
+        assert!(hist[0].updated_at > 0);
+        // Hapus per-item: m2 hilang, m1 utuh.
+        tauri::async_runtime::block_on(repo.remove_history("m2")).unwrap();
+        let hist = tauri::async_runtime::block_on(repo.list_history(10)).unwrap();
+        assert_eq!(hist.len(), 1);
+        assert_eq!(hist[0].content_id, "m1");
         tauri::async_runtime::block_on(repo.clear_history()).unwrap();
         assert!(tauri::async_runtime::block_on(repo.list_history(10))
             .unwrap()
@@ -132,7 +144,7 @@ mod tests {
     #[test]
     fn clear_library_wipes_history_favorites_snapshots() {
         let repo = LibraryRepositoryImpl::open_in_memory().unwrap();
-        tauri::async_runtime::block_on(repo.record_history("m1", 3)).unwrap();
+        tauri::async_runtime::block_on(repo.record_history(&content("m1"), 3)).unwrap();
         tauri::async_runtime::block_on(repo.set_favorite(&content("m1"), true)).unwrap();
         tauri::async_runtime::block_on(repo.clear_library()).unwrap();
         assert!(tauri::async_runtime::block_on(repo.list_history(10))

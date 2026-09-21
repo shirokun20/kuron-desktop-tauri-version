@@ -7,6 +7,7 @@ pub mod get_page_images;
 pub mod list_favorites;
 pub mod list_history;
 pub mod record_history;
+pub mod remove_history;
 pub mod say_hello;
 pub mod search_content;
 pub mod set_favorite;

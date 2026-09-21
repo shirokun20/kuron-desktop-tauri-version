@@ -9,16 +9,19 @@ use async_trait::async_trait;
 
 use crate::{
     core::AppError,
-    domain::{Content, HistoryEntry},
+    domain::{Content, HistoryItem},
 };
 
 #[async_trait]
 pub trait LibraryRepository: Send + Sync {
-    /// Simpan/upsert posisi baca (ala `UserDataRepository.saveHistory`).
-    async fn record_history(&self, content_id: &str, position: i64)
+    /// Simpan/upsert posisi baca + snapshot display
+    /// (ala `UserDataRepository.saveHistory` yang membawa `History` penuh).
+    async fn record_history(&self, content: &Content, position: i64)
         -> Result<(), AppError>;
-    /// Riwayat terbaru dulu (ala `getHistory`, `limit` ganti page/limit).
-    async fn list_history(&self, limit: i64) -> Result<Vec<HistoryEntry>, AppError>;
+    /// Riwayat terbaru dulu, siap-display (ala `getHistory`).
+    async fn list_history(&self, limit: i64) -> Result<Vec<HistoryItem>, AppError>;
+    /// Buang satu entri riwayat (ala `removeFromHistory`).
+    async fn remove_history(&self, content_id: &str) -> Result<(), AppError>;
     /// Buang seluruh riwayat (ala `clearHistory`).
     async fn clear_history(&self) -> Result<(), AppError>;
     /// Tandai favorit + simpan snapshot konten untuk daftar
@@ -38,14 +41,18 @@ pub trait LibraryRepository: Send + Sync {
 impl<R: LibraryRepository + ?Sized> LibraryRepository for Arc<R> {
     async fn record_history(
         &self,
-        content_id: &str,
+        content: &Content,
         position: i64,
     ) -> Result<(), AppError> {
-        (**self).record_history(content_id, position).await
+        (**self).record_history(content, position).await
     }
 
-    async fn list_history(&self, limit: i64) -> Result<Vec<HistoryEntry>, AppError> {
+    async fn list_history(&self, limit: i64) -> Result<Vec<HistoryItem>, AppError> {
         (**self).list_history(limit).await
+    }
+
+    async fn remove_history(&self, content_id: &str) -> Result<(), AppError> {
+        (**self).remove_history(content_id).await
     }
 
     async fn clear_history(&self) -> Result<(), AppError> {
