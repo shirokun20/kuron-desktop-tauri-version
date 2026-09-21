@@ -3,9 +3,27 @@
   // Dibuka dari sidebar EXPLORE; data dari libraryStore (live singleton).
   import MainGridCard from "../components/MainGridCard.svelte";
   import { libraryStore } from "../stores/library.svelte";
+  import type { Content, HistoryItem } from "../domain/types";
 
-  let { tab }: { tab: string } = $props();
+  let {
+    tab,
+    onselect,
+  }: { tab: string; onselect: (c: Content) => void } = $props();
   let isFav = $derived(tab === "favorites");
+
+  /** Baris riwayat → Content sintetis agar bisa dibuka lagi di detail. */
+  function historyContent(h: HistoryItem): Content {
+    return {
+      id: h.content_id,
+      title: h.title,
+      cover_url: h.cover_url,
+      source_id: h.source_id,
+      upload_date: null,
+      is_favorite: false,
+      page_count: null,
+      language: null,
+    };
+  }
 
   function fmtDate(epochSecs: bigint | number): string {
     const d = new Date(Number(epochSecs) * 1000);
@@ -39,7 +57,7 @@
     {:else}
       <div class="grid">
         {#each libraryStore.favorites as item (item.id)}
-          <MainGridCard content={item} />
+          <MainGridCard content={item} {onselect} />
         {/each}
       </div>
     {/if}
@@ -69,7 +87,15 @@
             {:else}
               <span class="thumb-fallback">{h.title.slice(0, 2).toUpperCase()}</span>
             {/if}
-            <div class="meta">
+            <div
+              class="meta clickable"
+              role="button"
+              tabindex="0"
+              onclick={() => onselect(historyContent(h))}
+              onkeydown={(e) => {
+                if (e.key === "Enter") onselect(historyContent(h));
+              }}
+            >
               <strong>{h.title}</strong>
               <span class="muted">
                 {h.source_id} · halaman {h.position} · {fmtDate(h.updated_at)}
@@ -175,6 +201,9 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+  .row .meta.clickable {
+    cursor: pointer;
   }
   .row .meta strong {
     font-size: 14px;

@@ -336,8 +336,16 @@ fn build_tag_query(
 pub async fn cmd_get_detail(
     state: State<'_, AppState>,
     content_id: String,
+    source: Option<String>,
 ) -> Result<Content, String> {
-    GetContentDetailUseCase::new(state.content_repo.clone())
+    // Ikut sumber aktif seperti search/home_feed (dulu mock-only).
+    let repo = match source.as_deref() {
+        Some(id) if !id.is_empty() && id != "semua" => state
+            .repo_for(&id.to_lowercase())
+            .map_err(|e| e.to_string())?,
+        _ => state.content_repo.clone(),
+    };
+    GetContentDetailUseCase::new(repo)
         .execute(&content_id)
         .await
         .map_err(|e| e.to_string())
@@ -347,8 +355,16 @@ pub async fn cmd_get_detail(
 pub async fn cmd_get_chapters(
     state: State<'_, AppState>,
     content_id: String,
+    source: Option<String>,
 ) -> Result<Vec<Chapter>, String> {
-    GetChaptersUseCase::new(state.content_repo.clone())
+    // Ikut sumber aktif seperti search/home_feed (dulu mock-only).
+    let repo = match source.as_deref() {
+        Some(id) if !id.is_empty() && id != "semua" => state
+            .repo_for(&id.to_lowercase())
+            .map_err(|e| e.to_string())?,
+        _ => state.content_repo.clone(),
+    };
+    GetChaptersUseCase::new(repo)
         .execute(&content_id)
         .await
         .map_err(|e| e.to_string())
@@ -358,8 +374,16 @@ pub async fn cmd_get_chapters(
 pub async fn cmd_get_page_images(
     state: State<'_, AppState>,
     chapter_id: String,
+    source: Option<String>,
 ) -> Result<Vec<PageImageResult>, String> {
-    GetPageImagesUseCase::new(state.content_repo.clone())
+    // Ikut sumber aktif seperti search/home_feed (dulu mock-only).
+    let repo = match source.as_deref() {
+        Some(id) if !id.is_empty() && id != "semua" => state
+            .repo_for(&id.to_lowercase())
+            .map_err(|e| e.to_string())?,
+        _ => state.content_repo.clone(),
+    };
+    GetPageImagesUseCase::new(repo)
         .execute(&chapter_id)
         .await
         .map_err(|e| e.to_string())

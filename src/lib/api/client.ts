@@ -2,11 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauriRuntime } from "./platform";
 import type {
   AppInfo,
+  Chapter,
   Content,
   ExtensionManifest,
   Hello,
   HistoryItem,
   InstalledSource,
+  PageImageResult,
   ZipPreview,
 } from "../domain/types";
 
@@ -49,6 +51,12 @@ export const api = {
     call("cmd_search_form", { source }),
   tagQuery: (source: string, tagType: string, tagName: string): Promise<string> =>
     call("cmd_tag_query", { source, tagType, tagName }),
+  detail: (contentId: string, source?: string): Promise<Content> =>
+    call("cmd_get_detail", { contentId, source: source ?? null }),
+  chapters: (contentId: string, source?: string): Promise<Chapter[]> =>
+    call("cmd_get_chapters", { contentId, source: source ?? null }),
+  pageImages: (chapterId: string, source?: string): Promise<PageImageResult[]> =>
+    call("cmd_get_page_images", { chapterId, source: source ?? null }),
   // Web: daftar kosong (Sidebar tetap menampilkan sumber tersimpan user).
   sourcesList: (): Promise<InstalledSource[]> =>
     isTauriRuntime() ? invoke("cmd_sources_list") : Promise.resolve([]),

@@ -5,7 +5,10 @@
   import { libraryStore } from "../stores/library.svelte";
   import { langFlag, langLabel } from "../utils/lang";
 
-  let { content }: { content: Content } = $props();
+  let {
+    content,
+    onselect,
+  }: { content: Content; onselect: (c: Content) => void } = $props();
   let imgFailed = $state(false);
   let fav = $derived(libraryStore.isFav(content.id));
 
@@ -13,7 +16,15 @@
   const HEART = '<svg viewBox="0 0 24 24" fill="FILL" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>';
 </script>
 
-<article class="grid-card">
+<div
+  class="grid-card clickable"
+  onclick={() => onselect(content)}
+  onkeydown={(e) => {
+    if (e.key === "Enter" || e.key === " ") onselect(content);
+  }}
+  role="button"
+  tabindex="0"
+>
   <div class="cover">
     <button
       class="fav"
@@ -51,7 +62,7 @@
       </div>
     </div>
   </div>
-</article>
+</div>
 
 <style>
   .grid-card {
@@ -63,6 +74,9 @@
   }
   .grid-card:hover {
     border-color: var(--primary);
+  }
+  .grid-card.clickable {
+    cursor: pointer;
   }
   .cover {
     position: relative;
