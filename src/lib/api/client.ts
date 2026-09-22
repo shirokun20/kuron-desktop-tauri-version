@@ -9,6 +9,7 @@ import type {
   Chapter,
   Comment,
   Content,
+  DownloadTask,
   ExtensionManifest,
   Hello,
   HistoryItem,
@@ -119,4 +120,26 @@ export const api = {
   // dipakai sekali di backend untuk listing, tak disimpan.
   aiModelCatalog: (kind: AiProviderKind, apiKey: string): Promise<AiModelOption[]> =>
     call("cmd_ai_model_catalog", { kind, apiKey }),
+  // Download manager (8.1): start/pause/resume/list/status/remove.
+  downloadStart: (
+    chapterId: string,
+    contentId: string,
+    sourceId: string,
+    total?: number,
+  ): Promise<DownloadTask> =>
+    call("cmd_download_start", {
+      chapterId,
+      contentId,
+      sourceId,
+      total: total ?? null,
+    }),
+  downloadPause: (chapterId: string): Promise<DownloadTask> =>
+    call("cmd_download_pause", { chapterId }),
+  downloadResume: (chapterId: string): Promise<DownloadTask> =>
+    call("cmd_download_resume", { chapterId }),
+  downloadList: (): Promise<DownloadTask[]> => call("cmd_download_list"),
+  downloadStatus: (chapterId: string): Promise<DownloadTask | null> =>
+    call("cmd_download_status", { chapterId }),
+  downloadRemove: (chapterId: string): Promise<boolean> =>
+    call("cmd_download_remove", { chapterId }),
 };

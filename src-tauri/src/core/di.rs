@@ -5,6 +5,8 @@
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
+    application::DownloadManager,
+    cache::ImageCache,
     core::constants::APP_ID,
     data::{
         datasources::{
@@ -15,12 +17,15 @@ use crate::{
                 NhentaiApiAdapter, PaginationCursors, SourceConfig,
             },
         },
+        http_fetcher_arc,
         repositories::{
-            AiProviderRepositoryImpl, ContentRepositoryImpl, LibraryRepositoryImpl,
-            MockContentRepository,
+            AiProviderRepositoryImpl, ContentRepositoryImpl, DownloadsRepositoryImpl,
+            LibraryRepositoryImpl, MockContentRepository,
         },
     },
-    domain::repositories::{AiProviderRepository, ContentRepository, LibraryRepository},
+    domain::repositories::{
+        AiProviderRepository, ContentRepository, DownloadsRepository, LibraryRepository,
+    },
     network::HttpClientManager,
 };
 
@@ -31,6 +36,12 @@ pub struct AppState {
     pub content_repo: Arc<dyn ContentRepository>,
     /// Library lokal SQLite (riwayat + favorit, 8.3).
     pub library: Arc<dyn LibraryRepository>,
+    /// Baris unduhan SQLite (8.1).
+    pub downloads: Arc<dyn DownloadsRepository>,
+    /// Manager unduhan background + event progress/completed (8.1).
+    pub download_manager: Arc<DownloadManager>,
+    /// Cache gambar halaman (`$sourceId/$contentId/page_N.jpg`, 4.4/8.1).
+    pub image_cache: Arc<ImageCache>,
     /// Provider AI BYOK: metadata di KV, kunci di keychain OS (9.2).
     pub ai_providers: Arc<dyn AiProviderRepository>,
     pub http: HttpClientManager,
@@ -61,20 +72,59 @@ fn default_kv_path() -> PathBuf {
         .join("kv.json")
 }
 
+fn default_cache_path() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("id.nhasix.kuron")
+        .join("images")
+}
+
+/// Buka repo SQLite dengan fallback memori (pola library, 8.1).
+fn open_repo_with_memory_fallback<T>(
+    label: &str,
+    open_file: impl FnOnce() -> Result<T, crate::core::AppError>,
+    open_mem: impl FnOnce() -> Result<T, crate::core::AppError>,
+) -> Arc<T>
+where
+    T: 'static,
+{
+    match open_file() {
+        Ok(repo) => Arc::new(repo),
+        Err(e) => {
+            tracing::warn!("{label} fallback memori: {e}");
+            Arc::new(open_mem().expect("sqlite memori init"))
+        }
+    }
+}
+
 impl AppState {
     pub fn new(content_repo: Arc<dyn ContentRepository>) -> Self {
         let ext_dir = default_ext_dir();
         let _ = std::fs::create_dir_all(&ext_dir);
         // Library: file `kuron.db`; bila gagal dibuka (lock/IO), fallback
         // memori + warn agar app tetap boot (data sesi tak persist).
-        let library: Arc<dyn LibraryRepository> =
-            match LibraryRepositoryImpl::open(&default_db_path()) {
-                Ok(repo) => Arc::new(repo),
-                Err(e) => {
-                    tracing::warn!("library fallback memori: {e}");
-                    Arc::new(LibraryRepositoryImpl::open_in_memory().expect("sqlite memori init"))
-                }
-            };
+        let library: Arc<dyn LibraryRepository> = open_repo_with_memory_fallback(
+            "library",
+            || LibraryRepositoryImpl::open(&default_db_path()),
+            || LibraryRepositoryImpl::open_in_memory(),
+        );
+        // Downloads: DB sama (kuron.db) — baris terpisah; fallback ikut library.
+        let downloads: Arc<dyn DownloadsRepository> = open_repo_with_memory_fallback(
+            "downloads",
+            || DownloadsRepositoryImpl::open(&default_db_path()),
+            || DownloadsRepositoryImpl::open_in_memory(),
+        );
+        // Image cache + fetcher HTTP → DownloadManager (8.1).
+        let image_cache = Arc::new(
+            ImageCache::new(&default_cache_path(), 2 * 1024 * 1024 * 1024)
+                .expect("image cache init"),
+        );
+        let http = HttpClientManager::new().expect("tls backend init");
+        let download_manager = Arc::new(DownloadManager::new(
+            downloads.clone(),
+            http_fetcher_arc(http.clone()),
+            image_cache.clone() as Arc<dyn crate::domain::repositories::PageCache>,
+        ));
         // AI provider BYOK: metadata di KV file; kunci hanya di keychain OS.
         let ai_providers: Arc<dyn AiProviderRepository> = Arc::new(AiProviderRepositoryImpl::new(
             KvStoreDs::open(&default_kv_path()).expect("kv init"),
@@ -85,8 +135,11 @@ impl AppState {
             version: env!("CARGO_PKG_VERSION").to_string(),
             content_repo,
             library,
+            downloads,
+            download_manager,
+            image_cache,
             ai_providers,
-            http: HttpClientManager::new().expect("tls backend init"),
+            http,
             ext_dir,
             cursors: PaginationCursors::default(),
         }
@@ -375,16 +428,28 @@ mod tests {
     /// AppState dengan ext_dir fixture (pola sama dengan `config.rs::write_fixture`).
     fn state_with_ext_dir(dir: &std::path::Path) -> AppState {
         let _ = std::fs::create_dir_all(dir);
+        let http = HttpClientManager::new().expect("tls backend init");
+        let image_cache = Arc::new(ImageCache::new(&dir.join("images"), 64 * 1024 * 1024).unwrap());
+        let downloads: Arc<dyn DownloadsRepository> =
+            Arc::new(DownloadsRepositoryImpl::open_in_memory().unwrap());
+        let download_manager = Arc::new(DownloadManager::new(
+            downloads.clone(),
+            http_fetcher_arc(http.clone()),
+            image_cache.clone() as Arc<dyn crate::domain::repositories::PageCache>,
+        ));
         AppState {
             app_name: "test".into(),
             version: "0".into(),
             content_repo: Arc::new(MockContentRepository),
             library: Arc::new(LibraryRepositoryImpl::open_in_memory().unwrap()),
+            downloads,
+            download_manager,
+            image_cache,
             ai_providers: Arc::new(AiProviderRepositoryImpl::new(
                 KvStoreDs::open(&dir.join("kv.json")).unwrap(),
                 SecretStore::new_memory(),
             )),
-            http: HttpClientManager::new().expect("tls backend init"),
+            http,
             ext_dir: dir.to_path_buf(),
             cursors: PaginationCursors::default(),
         }

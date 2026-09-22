@@ -5,10 +5,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::{
-    core::AppError,
-    domain::DownloadTask,
-};
+use crate::{core::AppError, domain::DownloadTask};
 
 #[async_trait]
 pub trait DownloadsRepository: Send + Sync {

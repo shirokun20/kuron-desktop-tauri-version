@@ -8,15 +8,18 @@ pub mod network;
 
 use commands::{
     cmd_ai_model_catalog, cmd_ai_provider_delete, cmd_ai_provider_save, cmd_ai_providers_list,
-    cmd_app_info, cmd_extension_install, cmd_extension_install_staged_zip,
-    cmd_extension_install_zip_file, cmd_extension_manifest, cmd_extension_preview_zip_url,
-    cmd_extension_uninstall, cmd_favorite_list, cmd_favorite_set, cmd_get_chapters,
-    cmd_get_comments, cmd_get_detail, cmd_get_page_images, cmd_get_related, cmd_hello_world,
-    cmd_history_clear, cmd_history_list, cmd_history_record, cmd_history_remove, cmd_home_feed,
-    cmd_image_build_mosaic, cmd_image_chunk_webtoon, cmd_image_compress_page, cmd_library_clear,
-    cmd_search, cmd_search_form, cmd_sources_list, cmd_tag_query,
+    cmd_app_info, cmd_download_list, cmd_download_pause, cmd_download_remove, cmd_download_resume,
+    cmd_download_start, cmd_download_status, cmd_extension_install,
+    cmd_extension_install_staged_zip, cmd_extension_install_zip_file, cmd_extension_manifest,
+    cmd_extension_preview_zip_url, cmd_extension_uninstall, cmd_favorite_list, cmd_favorite_set,
+    cmd_get_chapters, cmd_get_comments, cmd_get_detail, cmd_get_page_images, cmd_get_related,
+    cmd_hello_world, cmd_history_clear, cmd_history_list, cmd_history_record, cmd_history_remove,
+    cmd_home_feed, cmd_image_build_mosaic, cmd_image_chunk_webtoon, cmd_image_compress_page,
+    cmd_library_clear, cmd_search, cmd_search_form, cmd_sources_list, cmd_tag_query,
+    TauriDownloadSink,
 };
 use core::{logger, AppState};
+use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
@@ -37,6 +40,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
         .setup(|app| {
+            // Sink event unduhan: progress/completed → semua jendela (8.1).
+            {
+                let state = app.state::<AppState>();
+                state.download_manager.set_sink(Arc::new(TauriDownloadSink {
+                    app: app.handle().clone(),
+                }));
+                let manager = state.download_manager.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = manager.hydrate_from_db().await {
+                        tracing::warn!("hydrate downloads: {e}");
+                    }
+                });
+            }
             let app_menu = Submenu::with_items(
                 app,
                 "Kuron",
@@ -199,7 +215,13 @@ pub fn run() {
             cmd_ai_model_catalog,
             cmd_image_chunk_webtoon,
             cmd_image_build_mosaic,
-            cmd_image_compress_page
+            cmd_image_compress_page,
+            cmd_download_start,
+            cmd_download_pause,
+            cmd_download_resume,
+            cmd_download_list,
+            cmd_download_status,
+            cmd_download_remove
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

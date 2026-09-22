@@ -51,7 +51,11 @@ export type ReaderSettings = { mode: ReadingMode, right_to_left: boolean, };
 
 export type ReadingMode = "Paginated" | "ContinuousScroll" | "Webtoon";
 
-export type DownloadTask = { chapter_id: string, content_id: string, state: DownloadState, };
+export type DownloadTask = { chapter_id: string, content_id: string,
+/**
+ * Sumber chapter (kunci cache `$sourceId/$contentId/page_N.jpg`).
+ */
+source_id: string, state: DownloadState, };
 
 export type DownloadState = "Queued" | { "Downloading": { page: number, total: number, } } | "Paused" | "Completed" | { "Failed": string };
 

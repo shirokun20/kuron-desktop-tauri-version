@@ -3,6 +3,7 @@
 
 pub mod ai_commands;
 pub mod content_commands;
+pub mod download_commands;
 pub mod extension_commands;
 pub mod hello_commands;
 pub mod image_commands;
@@ -14,6 +15,10 @@ pub use ai_commands::{
 pub use content_commands::{
     cmd_get_chapters, cmd_get_comments, cmd_get_detail, cmd_get_page_images, cmd_get_related,
     cmd_home_feed, cmd_search, cmd_search_form, cmd_tag_query,
+};
+pub use download_commands::{
+    cmd_download_list, cmd_download_pause, cmd_download_remove, cmd_download_resume,
+    cmd_download_start, cmd_download_status, TauriDownloadSink,
 };
 pub use extension_commands::{
     cmd_extension_install, cmd_extension_install_staged_zip, cmd_extension_install_zip_file,

@@ -49,8 +49,7 @@ impl ImageCache {
     /// Hapus seluruh halaman satu konten (`$root/$sourceId/$contentId/`).
     pub fn remove_content(&self, source_id: &str, content_id: &str) -> Result<(), AppError> {
         for part in [source_id, content_id] {
-            if part.is_empty() || part.contains("..") || part.contains('/') || part.contains('\\')
-            {
+            if part.is_empty() || part.contains("..") || part.contains('/') || part.contains('\\') {
                 return Err(AppError::Validation(format!("path komponen buruk: {part}")));
             }
         }

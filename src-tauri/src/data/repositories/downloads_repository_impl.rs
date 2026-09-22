@@ -62,13 +62,8 @@ impl DownloadsRepository for DownloadsRepositoryImpl {
         match self.db.get_download_row(chapter_id)? {
             None => Ok(None),
             Some((content_id, source_id, state_json)) => {
-                Self::row_to_task(
-                    chapter_id.to_string(),
-                    content_id,
-                    source_id,
-                    state_json,
-                )
-                .map(Some)
+                Self::row_to_task(chapter_id.to_string(), content_id, source_id, state_json)
+                    .map(Some)
             }
         }
     }
@@ -119,7 +114,9 @@ mod tests {
                 serde_json::json!({"Downloading": {"page": 2, "total": 10}})
             );
             // Upsert state.
-            repo.save(&task("c1", DownloadState::Completed)).await.unwrap();
+            repo.save(&task("c1", DownloadState::Completed))
+                .await
+                .unwrap();
             let got = repo.get("c1").await.unwrap().unwrap();
             assert_eq!(
                 serde_json::to_value(&got.state).unwrap(),
