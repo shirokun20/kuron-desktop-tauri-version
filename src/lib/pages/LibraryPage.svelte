@@ -3,6 +3,7 @@
   // Dibuka dari sidebar EXPLORE; data dari libraryStore (live singleton).
   import MainGridCard from "../components/MainGridCard.svelte";
   import { libraryStore } from "../stores/library.svelte";
+  import { settingsStore } from "../stores/settings.svelte";
   import type { Content, HistoryItem } from "../domain/types";
 
   let {
@@ -106,6 +107,7 @@
             >
               {#if h.cover_url}
                 <img
+                  class:privacy={settingsStore.blurThumbnail}
                   src={h.cover_url}
                   alt=""
                   loading="lazy"
@@ -284,6 +286,10 @@
     background: var(--muted);
     border: 1px solid var(--border);
     box-shadow: 3px 3px 0 rgb(0 0 0 / 0.3);
+  }
+  /* Privasi (9.1): thumb riwayat ikut blur thumbnail default-on. */
+  .open img.privacy {
+    filter: blur(8px);
   }
   .thumb-fallback {
     display: inline-flex;

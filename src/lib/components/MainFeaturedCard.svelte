@@ -3,6 +3,7 @@
   // Backdrop cover blur + panel info + dots; auto 6 dtk, jeda saat hover.
   import { onMount } from "svelte";
   import type { Content } from "../domain/types";
+  import { settingsStore } from "../stores/settings.svelte";
   import { langFlag, langLabel } from "../utils/lang";
 
   let { items }: { items: Content[] } = $props();
@@ -51,6 +52,7 @@
       {#if current.cover_url && !imgFailed[current.id]}
         <img
           class="thumb"
+          class:privacy={settingsStore.blurThumbnail}
           src={current.cover_url}
           alt={current.title}
           loading="eager"
@@ -119,6 +121,11 @@
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.25);
     flex-shrink: 0;
+    transition: filter 180ms ease;
+  }
+  /* Privasi (9.1): thumb sharp ikut blur thumbnail default-on. */
+  .thumb.privacy {
+    filter: blur(12px);
   }
   .info {
     flex: 1;

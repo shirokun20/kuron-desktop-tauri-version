@@ -6,6 +6,7 @@
   import { contentStore } from "../stores/content.svelte";
   import { helloStore } from "../stores/hello.svelte";
   import { sourceStore } from "../stores/source.svelte";
+  import { settingsStore } from "../stores/settings.svelte";
   import { routeStore } from "../router/route.svelte";
   import { setMainSize, setSplashSize } from "../api/window";
 
@@ -36,7 +37,13 @@
       try {
         await sourceStore.load();
         helloStore.loadInfo();
-        contentStore.load(sourceStore.current === "semua" ? undefined : sourceStore.current);
+        // Gate "Muat feed otomatis" (Pengaturan → Jaringan): mati = splash
+        // tak kirim request feed; muat manual dari beranda (tombol Muat ulang).
+        if (settingsStore.autoLoadFeed) {
+          contentStore.load(
+            sourceStore.current === "semua" ? undefined : sourceStore.current,
+          );
+        }
       } catch (e) {
         err = `init gagal: ${e}`;
       }

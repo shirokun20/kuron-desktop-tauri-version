@@ -9,6 +9,7 @@
   import { clearSavedQuery, loadSavedQuery } from "../stores/filterPersist";
   import { overlayStore } from "../stores/overlay.svelte";
   import { platformStore } from "../stores/platform.svelte";
+  import { settingsStore } from "../stores/settings.svelte";
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import Sidebar from "../components/Sidebar.svelte";
@@ -16,6 +17,7 @@
   import MainFeaturedCard from "../components/MainFeaturedCard.svelte";
   import MainGridCard from "../components/MainGridCard.svelte";
   import LibraryPage from "./LibraryPage.svelte";
+  import SettingsPage from "./SettingsPage.svelte";
   import { routeStore } from "../router/route.svelte";
   import type { Content } from "../domain/types";
 
@@ -111,9 +113,11 @@
   // Feed ikut sumber aktif (termasuk hasil install ekstensi).
   // Sumber yang punya pencarian tersimpan (`kuron.filter.<source>`) langsung
   // dibuka dalam mode itu — termasuk saat aplikasi baru dijalankan / window
-  // baru; tanpa simpanan → beranda.
+  // baru; tanpa simpanan → beranda. Gate "Muat feed otomatis" (Pengaturan →
+  // Jaringan): mati = tanpa request sendiri; muat manual lewat tombol.
   $effect(() => {
     const s = sourceStore.current;
+    if (!settingsStore.autoLoadFeed) return;
     const saved = loadSavedQuery(s);
     if (saved) contentStore.search(s, saved.query, saved.label);
     else contentStore.load(s);
@@ -170,6 +174,8 @@
       {/if}
       {#if activeNav === "favorites" || activeNav === "history"}
         <LibraryPage tab={activeNav} onselect={selectContent} />
+      {:else if activeNav === "settings"}
+        <SettingsPage />
       {:else}
       {#if contentStore.loading && contentStore.feed.length === 0}
         <p class="muted">Memuat feed…</p>
@@ -228,9 +234,15 @@
           {#if contentStore.searchQuery}
             <p>Tidak ada hasil untuk "{contentStore.searchLabel}" di {sourceStore.currentLabel}.</p>
             <p class="muted">Coba kata kunci lain — atau pakai Filter untuk bahasa, tag, dan status.</p>
-          {:else}
-            <p class="muted">Feed kosong — coba Muat ulang atau ganti sumber.</p>
-          {/if}
+        {:else}
+          <p class="muted">Feed kosong — coba Muat ulang atau ganti sumber.</p>
+          <button
+            class="ghost load-again"
+            onclick={() => contentStore.load(sourceStore.current)}
+          >
+            Muat ulang
+          </button>
+        {/if}
         </section>
       {/if}
 
@@ -439,6 +451,10 @@
   .muted {
     color: var(--muted-foreground);
     font-size: 14px;
+  }
+  /* Feed kosong (+ gate auto-load mati): pintu muat manual. */
+  .load-again {
+    margin-top: 12px;
   }
   .err {
     color: var(--destructive);

@@ -86,13 +86,13 @@ src/lib/
 
 ## Current Progress Dashboard
 
-> Tracked via `openspec/` — Last updated: 2026-09-20 (20/37 tasks, change `kuron-desktop-roadmap` in-progress)
+> Tracked via `openspec/` — Last updated: 2026-09-22 (22/37 tasks, change `kuron-desktop-roadmap` in-progress)
 
 ### Archived (in `openspec/changes/archive/`)
 - *(none)*
 
 ### Active Changes (in `openspec/changes/`)
-- `kuron-desktop-roadmap` — proposal + 13 spec + design + tasks (20/37 DONE: grup 1–3, 4.1–4.6)
+- `kuron-desktop-roadmap` — proposal + 13 spec + design + tasks (22/37 DONE: grup 1–3, 4.1–4.7, 4b, 4c, 4d, 7.0, 7b, 8.3, **9.1, 10.2**)
 - `kuron-parity-1to1` — change turunan parity 1:1 mobile (proposal + 5 spec + design + tasks A–E, PLANNED; `openspec validate` valid 0 warning)
 
 ### Open Issues (tech debt tercatat, sadar)
@@ -108,10 +108,11 @@ src/lib/
 
 ### Recent Sessions
 
-> Session log in this table. Last updated: 2026-09-20.
+> Session log in this table. Last updated: 2026-09-22.
 
 | Date | Agent | Area | Status | Summary |
 |---|---|---|---|---|
+| 2026-09-22 | OpenCode | Roadmap task mudah: 9.1 Pengaturan + 10.2 diet font | Done | User: apply `kuron-desktop-roadmap`, kerjakan yang mudah dulu. **10.2**: KosugiMaru TTF→WOFF2 brotli penuh (3.565.692→1.533.076 B, −57%); subset unicode ditolak (88.8% glyph = kanji CJK wajib judul manga); `dist` 4.7MB→**2.8MB**; TTF disimpan sbg sumber tak dibundel. **9.1**: `SettingsPage` 4 seksi spec (Tampilan tema+blur default-ON, Pembaca mode+RTL persist dgn caption jujur "aktif setelah 7.1", Jaringan gate auto-load+Muat ulang, Data clearHistory/clearLibrary); `settingsPersist.ts` murni+`settings.svelte.ts` localStorage `kuron.settings`; blur cover diwiring MainGridCard+thumb featured+thumb riwayat; **bug ketemu saat E2E**: feed juga dimuat dari `SplashScreen:39` — gate ikut dipasang di splash. Verifikasi: `pnpm check` 0/0, `pnpm test` **27 pass** (6 baru), `vite build` OK 2.8MB, E2E Chrome CDP+mockIPC `/tmp/kuron-e2e-settings.mjs` **12/12** (default-on→toggle tajam→persist reload→gate→sinkron), `openspec validate` valid, `git diff --check` OK. Frontend-only (cargo tak dijalankan). Ditunda (bukan mudah): 9.3 glossary (butuh translate utk verifikasi), 5–8, 10.1, 10.3. |
 | 2026-09-21 | Muse Code | Urutan chapter MD = posisi feed (fix ngaco) | Done | Endpoint SAMA (order chapter desc); yang beda post-processing kita: order dari parse u32 gagal di desimal/sufiks/oneshot lalu fallback indeks sehingga campur skema dan sort asc ngaco. Mobile TANPA sorting (entity tanpa order). Kini order = base_offset + i + 1 (load-more lanjut 101..) dan badge angka = posisi ala displayIndex mobile. Regresi merah-dulu. Scraper sudah benar. cargo 72/0/0. Openspec 7b.11 + skenario. Rust berubah, restart pnpm dev. |
 | 2026-09-21 | Muse Code | Openspec 7b tercatat (tasks+spec+design) | Done | tasks.md §7b (10 item) + delta content-browse (5 req) + reader (1) + app-shell (1) + design decision #9 (config-menang). Validate 16/16. |
 | 2026-09-21 | Muse Code | Fix each_key_duplicate + MD load-more + bottom sheet | Done | Crash: genre scraper/MD semua `Tag.id="0"` → each `(tag.id)` duplikat → render detail mati. Kini dedup `type:name` ala mobile + kunci komposit+indeks. Load-more MD 1:1 `_loadMoreChapters`: param `offset` di-upsert ke URL (`md_chapters_url` murni + test), trait→usecase→cmd→client, cache feed per-bahasa, dedup id, `<100`=tuntas, gate sumber mangadex, error "coba lagi". Sheet: panel kanan → bottom sheet (grip + max 760px) semua ukuran. E2E 21/21; loop regresi terbukti red-capable (kunci lama → FATAL timeout detail chapters). `cargo` 71/0/0, `pnpm` 0/0, openspec 16/16. Rust berubah → restart `pnpm dev`. |

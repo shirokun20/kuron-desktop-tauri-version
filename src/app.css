@@ -125,8 +125,11 @@ h2 {
   src: url("./assets/fonts/Bangers.ttf") format("truetype");
   font-display: swap;
 }
+/* 10.2 diet font: WOFF2 brotli (3.5MB → 1.5MB, −57%). Subset unicode DITOLAK —
+ * 88.8% glyph = kanji CJK wajib untuk judul manga; buang = tofu. `swap` =
+ * lazy-load: hanya diunduh saat elemen memakai family ini. */
 @font-face {
   font-family: "KosugiMaru";
-  src: url("./assets/fonts/KosugiMaru.ttf") format("truetype");
+  src: url("./assets/fonts/KosugiMaru.woff2") format("woff2");
   font-display: swap;
 }

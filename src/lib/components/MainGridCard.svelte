@@ -3,6 +3,7 @@
   // (keterbacaan teks), judul 2 baris + badge halaman & bahasa.
   import type { Content } from "../domain/types";
   import { libraryStore } from "../stores/library.svelte";
+  import { settingsStore } from "../stores/settings.svelte";
   import { langFlag, langLabel } from "../utils/lang";
 
   let {
@@ -40,6 +41,7 @@
     </button>
     {#if content.cover_url && !imgFailed}
       <img
+        class:privacy={settingsStore.blurThumbnail}
         src={content.cover_url}
         alt={content.title}
         loading="lazy"
@@ -92,6 +94,12 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+    transition: filter 180ms ease;
+  }
+  /* Privasi (9.1): cover kabur default-on; scale cegah tepi blur transparan. */
+  .cover img.privacy {
+    filter: blur(16px);
+    transform: scale(1.08);
   }
   .fallback {
     font-size: 32px;
