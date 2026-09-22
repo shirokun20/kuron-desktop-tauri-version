@@ -11,9 +11,9 @@ use crate::{
         ExtensionManifest, ManifestEntry, ManifestMeta, ZipPreview, ZipSourceCandidate,
     },
     domain::{
-        AiProvider, AiProviderInput, AiProviderKind, BubbleBox, Chapter, Comment, Content,
-        DownloadState, DownloadTask, GlossaryEntry, Hello, HistoryItem, Language, PageImageResult,
-        PageTranslation, ReaderSettings, ReadingMode, SearchFilter, SourceId, Tag,
+        AiModelOption, AiProvider, AiProviderInput, AiProviderKind, BubbleBox, Chapter, Comment,
+        Content, DownloadState, DownloadTask, GlossaryEntry, Hello, HistoryItem, Language,
+        PageImageResult, PageTranslation, ReaderSettings, ReadingMode, SearchFilter, SourceId, Tag,
     },
 };
 
@@ -48,6 +48,7 @@ fn export_types_ts() {
         AiProviderKind::decl(&cfg),
         AiProvider::decl(&cfg),
         AiProviderInput::decl(&cfg),
+        AiModelOption::decl(&cfg),
     ];
 
     let mut out = String::from(
@@ -78,4 +79,5 @@ fn export_types_ts() {
     assert!(out.contains("type AiProvider ="));
     assert!(out.contains("type AiProviderInput ="));
     assert!(out.contains("type AiProviderKind ="));
+    assert!(out.contains("type AiModelOption ="));
 }

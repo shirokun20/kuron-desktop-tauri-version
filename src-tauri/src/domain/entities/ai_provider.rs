@@ -35,6 +35,18 @@ impl AiProviderKind {
             Self::Custom => "",
         }
     }
+
+    /// Endpoint daftar model (LOV) per jenis — port `AiProviderType.modelsUrl`
+    /// mobile. `Custom` tanpa endpoint: input manual saja.
+    pub fn models_url(&self) -> Option<&'static str> {
+        match self {
+            Self::OpenAi => Some("https://api.openai.com/v1/models"),
+            Self::Gemini => Some("https://generativelanguage.googleapis.com/v1beta/models"),
+            // Mobile listing pakai v1 (bentuk native `{models:[…]}`), bukan v2 chat.
+            Self::Cohere => Some("https://api.cohere.com/v1/models"),
+            Self::Custom => None,
+        }
+    }
 }
 
 /// Metadata provider TANPA kunci — siap ditampilkan di daftar UI.
@@ -59,4 +71,26 @@ pub struct AiProviderInput {
     pub kind: AiProviderKind,
     pub base_url: String,
     pub model: String,
+}
+
+/// Satu entri model untuk LOV pengaturan — port `AiModelOption` mobile.
+/// `is_vision`: `Some(true)` vision, `Some(false)` teks-saja, `None` tak
+/// diketahui (API tanpa flag → tanpa badge).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct AiModelOption {
+    /// ID model sesuai daftar API provider.
+    pub id: String,
+    /// Label human-readable; `None` = tampilkan `id`.
+    pub label: Option<String>,
+    pub is_vision: Option<bool>,
+}
+
+impl AiModelOption {
+    /// Tampilan default untuk UI (`label` bila ada, else `id`).
+    pub fn display_label(&self) -> &str {
+        self.label
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&self.id)
+    }
 }

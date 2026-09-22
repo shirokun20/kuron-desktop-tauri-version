@@ -8,8 +8,10 @@
   import { platformStore } from "../stores/platform.svelte";
   import { libraryStore } from "../stores/library.svelte";
   import { aiProvidersStore } from "../stores/aiProviders.svelte";
+  import { api } from "../api/client";
   import type { ReaderMode } from "../stores/settingsPersist";
-  import type { AiProviderKind } from "../domain/types";
+  import type { AiModelOption, AiProviderKind } from "../domain/types";
+  import { tagColor } from "../theme/tokens";
 
   const READER_MODES: { id: ReaderMode; label: string }[] = [
     { id: "paginated", label: "Per halaman" },
@@ -47,15 +49,80 @@
   let aiModel = $state(AI_PRESETS.openai.model);
   let aiKey = $state("");
   let aiSaving = $state(false);
+  // LOV model live (endpoint khusus per provider, ala mobile) — tanpa fallback.
+  let aiModels = $state<AiModelOption[] | null>(null);
+  let aiModelsLoading = $state(false);
+  let aiModelsError = $state<string | null>(null);
+  let aiManualModel = $state(false);
 
   $effect(() => {
     void aiProvidersStore.load();
   });
 
+  function resetAiModels() {
+    aiModels = null;
+    aiModelsError = null;
+    aiModelsLoading = false;
+    aiManualModel = false;
+  }
+
+  function kindLabel(kind: AiProviderKind): string {
+    return AI_KINDS.find((k) => k.id === kind)?.label ?? kind;
+  }
+
+  // Warna tile per jenis dari tag palette Kuron (theme-aware, bukan warna baru).
+  const KIND_TAG: Record<AiProviderKind, string> = {
+    openai: "uploader",
+    gemini: "character",
+    cohere: "language",
+    custom: "other",
+  };
+
+  function kindColor(kind: AiProviderKind): string {
+    return tagColor(KIND_TAG[kind], themeStore.darkMode);
+  }
+
+  function nameInitial(name: string): string {
+    return name.trim().charAt(0).toUpperCase() || "?";
+  }
+
   function onAiKindChange(k: AiProviderKind) {
     aiKind = k;
     aiBaseUrl = AI_PRESETS[k].base;
     aiModel = AI_PRESETS[k].model;
+    resetAiModels();
+  }
+
+  function onAiKeyChange() {
+    // Kunci berubah → daftar lama basi.
+    resetAiModels();
+  }
+
+  async function loadAiModels() {
+    if (aiModelsLoading) return;
+    if (aiKind === "custom" || !aiKey.trim()) return;
+    aiModelsLoading = true;
+    aiModelsError = null;
+    try {
+      aiModels = await api.aiModelCatalog(aiKind, aiKey.trim());
+      // Pastikan nilai tersimpan/terpilih ikut tampil walau tak di daftar.
+      if (
+        aiModel &&
+        aiModels.length > 0 &&
+        !aiModels.some((m) => m.id === aiModel)
+      ) {
+        aiModels = [
+          { id: aiModel, label: null, is_vision: null },
+          ...aiModels,
+        ];
+      }
+    } catch (e) {
+      aiModels = null;
+      aiModelsError =
+        e instanceof Error ? e.message : "gagal memuat daftar model";
+    } finally {
+      aiModelsLoading = false;
+    }
   }
 
   async function saveAiProvider() {
@@ -74,6 +141,8 @@
       );
       aiName = "";
       aiKey = "";
+      resetAiModels();
+      aiModel = AI_PRESETS[aiKind].model;
     } catch {
       // error → aiProvidersStore.error tampil di atas
     } finally {
@@ -244,40 +313,61 @@
     </div>
   </article>
 
-  <article class="card">
-    <h3>AI · Terjemahan</h3>
+  <article class="card ai-card">
+    <div class="ai-head">
+      <h3>AI · Terjemahan</h3>
+      {#if !isDesktop}
+        <span class="pill warn">Mode web</span>
+      {:else if aiProvidersStore.ready}
+        <span class="pill ok">Aktif · {aiProvidersStore.readyCount} kunci</span>
+      {:else}
+        <span class="pill off">Nonaktif</span>
+      {/if}
+    </div>
     <div class="row">
+      <span class="ai-glyph halftone" aria-hidden="true">AI</span>
       <div class="txt">
-        <strong>Status terjemahan</strong>
         {#if !isDesktop}
+          <strong>Kelola kunci di aplikasi desktop</strong>
           <p class="hint">
-            Mode web: kelola kunci hanya di aplikasi desktop — keychain OS
-            tidak tersedia di browser, jadi terjemahan nonaktif di sini.
+            Keychain OS tidak tersedia di browser — terjemahan nonaktif di
+            mode web.
           </p>
         {:else if aiProvidersStore.ready}
+          <strong>Siap dipakai reader</strong>
           <p class="hint ok">
-            Aktif — {aiProvidersStore.readyCount} provider dengan kunci
-            tersimpan di keychain OS. Pemilihan provider di reader menyusul
-            bersama fitur terjemahan (tugas 7.2).
+            {aiProvidersStore.readyCount} provider dengan kunci di keychain OS.
+            Pemilihan provider di reader menyusul bersama terjemahan (tugas
+            7.2).
           </p>
         {:else}
+          <strong>Belum ada kunci API</strong>
           <p class="hint">
-            Nonaktif — tanpa kunci API provider, fitur terjemahan mati.
-            Simpan kunci OpenAI / Gemini / Cohere / kustom di bawah untuk
-            mengaktifkan (disimpan di keychain, bukan file).
+            Tanpa kunci provider, fitur terjemahan mati. Simpan kunci di bawah
+            — hanya dititipkan ke keychain, bukan file.
           </p>
         {/if}
       </div>
-      <span class="value">{aiProvidersStore.providers.length}</span>
     </div>
     {#each aiProvidersStore.providers as p (p.id)}
       <div class="row">
+        <span
+          class="tile"
+          style:--tile={kindColor(p.kind)}
+          aria-hidden="true">{nameInitial(p.name)}</span
+        >
         <div class="txt">
           <strong>{p.name}</strong>
-          <p class="hint">
-            {p.kind} · {p.model} · {p.has_key
-              ? "kunci tersimpan di keychain"
-              : "tanpa kunci — terjemahan nonaktif"}
+          <p class="hint meta">
+            <span class="chip" style:--tile={kindColor(p.kind)}
+              >{kindLabel(p.kind)}</span
+            >
+            <code>{p.model}</code>
+            {#if p.has_key}
+              <span class="pill tiny ok">Keychain</span>
+            {:else}
+              <span class="pill tiny warn">Tanpa kunci</span>
+            {/if}
           </p>
         </div>
         <button
@@ -291,6 +381,7 @@
     {/each}
     {#if isDesktop}
       <div class="ai-form">
+        <p class="form-kicker">Pasang kunci baru</p>
         <label class="field">
           <span>Jenis provider</span>
           <select
@@ -311,31 +402,130 @@
             bind:value={aiName}
           />
         </label>
-        <label class="field">
+        <label class="field wide">
           <span>Base URL</span>
           <input type="text" bind:value={aiBaseUrl} />
         </label>
-        <label class="field">
-          <span>Model</span>
-          <input type="text" bind:value={aiModel} />
-        </label>
-        <label class="field">
+        <label class="field wide">
           <span>Kunci API</span>
           <input
             type="password"
             placeholder="tidak pernah ditampilkan lagi"
             autocomplete="off"
             bind:value={aiKey}
+            oninput={onAiKeyChange}
           />
         </label>
-        <button
-          type="button"
-          class="ghost primary"
-          disabled={aiSaving || !aiName.trim() || !aiKey.trim()}
-          onclick={saveAiProvider}
-        >
-          {aiSaving ? "Menyimpan…" : "Simpan provider"}
-        </button>
+        {#if aiKey.trim()}
+          <div class="model-block reveal">
+            <div class="field">
+              <span>Model</span>
+              {#if aiKind === "custom"}
+                <input
+                  type="text"
+                  placeholder="ID model, mis. llama-3.3-70b-instruct"
+                  bind:value={aiModel}
+                />
+              {:else if aiManualModel}
+                <input type="text" bind:value={aiModel} />
+              {:else if aiModels}
+                <select
+                  value={aiModel}
+                  onchange={(e) => (aiModel = e.currentTarget.value)}
+                >
+                  {#if !aiModel}
+                    <option value="" disabled>pilih model…</option>
+                  {/if}
+                  {#each aiModels as m (m.id)}
+                    <option value={m.id}>
+                      {m.label ?? m.id}{m.is_vision === true
+                        ? " · vision"
+                        : m.is_vision === false
+                          ? " · teks"
+                          : ""}
+                    </option>
+                  {/each}
+                </select>
+              {:else}
+                <button
+                  type="button"
+                  class="ghost load"
+                  disabled={aiModelsLoading}
+                  onclick={loadAiModels}
+                >
+                  {aiModelsLoading ? "Memuat…" : "Muat daftar model"}
+                </button>
+              {/if}
+            </div>
+            {#if aiKind === "custom"}
+              <small class="tip"
+                >Provider kustom tanpa endpoint daftar model — ketik ID model manual.</small
+              >
+            {:else if aiManualModel}
+              <div class="model-tools">
+                <button
+                  type="button"
+                  class="linkish"
+                  onclick={() => {
+                    aiManualModel = false;
+                    if (!aiModels) void loadAiModels();
+                  }}
+                >
+                  Pakai daftar model
+                </button>
+              </div>
+            {:else if aiModels}
+              <div class="model-tools">
+                <span class="tip"
+                  >{aiModels.length} model dari endpoint provider.</span
+                >
+                <button
+                  type="button"
+                  class="linkish"
+                  disabled={aiModelsLoading}
+                  onclick={loadAiModels}
+                >
+                  {aiModelsLoading ? "Memuat ulang…" : "Muat ulang"}
+                </button>
+                <button type="button" class="linkish" onclick={() => (aiManualModel = true)}>
+                  Input manual
+                </button>
+              </div>
+            {:else}
+              <div class="model-tools">
+                <button type="button" class="linkish" onclick={() => (aiManualModel = true)}>
+                  Input manual
+                </button>
+              </div>
+            {/if}
+            {#if aiModelsError}
+              <div class="model-tools">
+                <span class="err-inline">{aiModelsError}</span>
+                <button
+                  type="button"
+                  class="linkish"
+                  disabled={aiModelsLoading}
+                  onclick={loadAiModels}
+                >
+                  Coba lagi
+                </button>
+              </div>
+            {/if}
+          </div>
+        {/if}
+        <div class="ai-actions">
+          <button
+            type="button"
+            class="save"
+            disabled={aiSaving ||
+              !aiName.trim() ||
+              !aiKey.trim() ||
+              (aiKind === "custom" && !aiModel.trim())}
+            onclick={saveAiProvider}
+          >
+            {aiSaving ? "Menyimpan…" : "Simpan provider"}
+          </button>
+        </div>
       </div>
     {/if}
   </article>
@@ -451,11 +641,17 @@
   }
   .txt {
     min-width: 0;
+    flex: 1;
   }
   .txt strong {
     display: block;
     font-size: 14px;
     margin-bottom: 3px;
+  }
+  .ai-card .row .txt strong {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
   }
   .hint {
     margin: 0;
@@ -547,28 +743,191 @@
     opacity: 0.45;
     cursor: default;
   }
-  .ghost.primary {
-    background: var(--primary);
-    color: var(--primary-foreground);
-    border-color: var(--primary);
-  }
   .hint.ok {
+    color: var(--success);
+  }
+
+  /* —— AI · Terjemahan: identitas Kuron (tile, pill, halftone) —— */
+  .ai-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .ai-glyph {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+    font-family: "Bangers", "Komika", system-ui, sans-serif;
+    font-size: 20px;
+    letter-spacing: 0.06em;
+    line-height: 1;
+  }
+  .ai-glyph.halftone {
+    /* halftone dots di atas coral, identik pola header Pengaturan */
+    background-image: radial-gradient(
+      color-mix(in srgb, var(--primary-foreground) 22%, transparent) 1.1px,
+      transparent 1.3px
+    );
+    background-size: 6px 6px;
+  }
+  .tile {
+    flex-shrink: 0;
+    align-self: flex-start;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    margin-top: 1px;
+    border-radius: 9px;
+    border: 1px solid
+      color-mix(in srgb, var(--tile, var(--border)) 55%, var(--border));
+    background: color-mix(in srgb, var(--tile, var(--border)) 16%, var(--card));
+    color: var(--tile, var(--foreground));
+    font-family: "Bangers", "Komika", system-ui, sans-serif;
+    font-size: 17px;
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+  .hint.meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .chip {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 6px;
+    border: 1px solid
+      color-mix(in srgb, var(--tile, var(--border)) 55%, var(--border));
+    background: color-mix(in srgb, var(--tile, var(--border)) 14%, transparent);
+    color: var(--tile, var(--foreground));
+  }
+  .pill {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--background);
+    color: var(--muted-foreground);
+  }
+  .pill.ok {
+    color: var(--success);
+    border-color: color-mix(in srgb, var(--success) 50%, var(--border));
+    background: color-mix(in srgb, var(--success) 10%, var(--background));
+  }
+  .pill.warn {
+    color: var(--warning);
+    border-color: color-mix(in srgb, var(--warning) 50%, var(--border));
+    background: color-mix(in srgb, var(--warning) 10%, var(--background));
+  }
+  .pill.off {
+    color: var(--muted-foreground);
+    border-style: dashed;
+  }
+  .pill.tiny {
+    font-size: 9.5px;
+    padding: 2px 7px;
+    letter-spacing: 0.06em;
+  }
+  .form-kicker {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-family: "Komika", system-ui, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
     color: var(--primary);
   }
+  .form-kicker::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .save {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    border: 1px solid var(--primary);
+    border-radius: 10px;
+    padding: 9px 22px;
+    font-size: 13.5px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: filter 140ms ease;
+  }
+  .save:hover:not(:disabled) {
+    filter: brightness(1.05);
+  }
+  /* Disabled: netral (muted), bukan coral pudar yang jadi cokelat muddy. */
+  .save:disabled {
+    background: var(--card);
+    color: var(--muted-foreground);
+    border-color: var(--border);
+    cursor: default;
+  }
+  .save:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
+    outline-offset: 2px;
+  }
+
   .ai-form {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: flex-end;
-    padding: 14px 0;
-    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px 16px;
+    margin-top: 12px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--muted);
+  }
+  .ai-form .field input,
+  .ai-form .field select {
+    background: var(--card);
+  }
+  .ai-form .ghost.load {
+    background: var(--card);
   }
   .field {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    min-width: 160px;
-    flex: 1 1 160px;
+    gap: 5px;
+    min-width: 0;
+  }
+  .field.wide {
+    grid-column: 1 / -1;
+  }
+  .ai-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 2px;
+  }
+  @media (max-width: 560px) {
+    .ai-form {
+      grid-template-columns: 1fr;
+    }
   }
   .field span {
     font-size: 12px;
@@ -577,17 +936,103 @@
   }
   .field input,
   .field select {
+    height: 38px;
     border: 1px solid var(--border);
     border-radius: 10px;
-    background: var(--background);
+    background: var(--card);
     color: var(--foreground);
     font-size: 13px;
-    padding: 8px 10px;
+    padding: 0 12px;
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease;
+  }
+  .field input:hover,
+  .field select:hover {
+    border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
   }
   .field input:focus,
   .field select:focus {
-    outline: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
-    outline-offset: 1px;
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
+  }
+  /* LOV (dropdown): chevron custom — appearance default beda tiap OS */
+  .field select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 34px;
+    cursor: pointer;
+  }
+  .field:has(> select)::after {
+    content: "";
+    position: absolute;
+    right: 13px;
+    bottom: 14px;
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid var(--muted-foreground);
+    border-bottom: 2px solid var(--muted-foreground);
+    transform: rotate(45deg);
+    pointer-events: none;
+  }
+  .field select:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .reveal {
+    animation: reveal 180ms ease;
+  }
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .tip {
+    font-size: 11.5px;
+    color: var(--muted-foreground);
+  }
+  .model-block {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .model-tools {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .ghost.load {
+    height: 38px;
+    width: 100%;
+    justify-content: center;
+    border-style: dashed;
+    color: var(--muted-foreground);
+  }
+  .linkish {
+    border: 0;
+    background: none;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary);
+    cursor: pointer;
+  }
+  .linkish:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .err-inline {
+    font-size: 12px;
+    color: var(--destructive);
   }
   .err {
     margin: 0;

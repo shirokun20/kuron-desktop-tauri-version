@@ -7,13 +7,14 @@ pub mod domain;
 pub mod network;
 
 use commands::{
-    cmd_ai_provider_delete, cmd_ai_provider_save, cmd_ai_providers_list, cmd_app_info,
-    cmd_extension_install, cmd_extension_install_staged_zip, cmd_extension_install_zip_file,
-    cmd_extension_manifest, cmd_extension_preview_zip_url, cmd_extension_uninstall,
-    cmd_favorite_list, cmd_favorite_set, cmd_get_chapters, cmd_get_comments, cmd_get_detail,
-    cmd_get_page_images, cmd_get_related, cmd_hello_world, cmd_history_clear, cmd_history_list,
-    cmd_history_record, cmd_history_remove, cmd_home_feed, cmd_library_clear, cmd_search,
-    cmd_search_form, cmd_sources_list, cmd_tag_query,
+    cmd_ai_model_catalog, cmd_ai_provider_delete, cmd_ai_provider_save, cmd_ai_providers_list,
+    cmd_app_info, cmd_extension_install, cmd_extension_install_staged_zip,
+    cmd_extension_install_zip_file, cmd_extension_manifest, cmd_extension_preview_zip_url,
+    cmd_extension_uninstall, cmd_favorite_list, cmd_favorite_set, cmd_get_chapters,
+    cmd_get_comments, cmd_get_detail, cmd_get_page_images, cmd_get_related, cmd_hello_world,
+    cmd_history_clear, cmd_history_list, cmd_history_record, cmd_history_remove, cmd_home_feed,
+    cmd_image_build_mosaic, cmd_image_chunk_webtoon, cmd_image_compress_page, cmd_library_clear,
+    cmd_search, cmd_search_form, cmd_sources_list, cmd_tag_query,
 };
 use core::{logger, AppState};
 use tauri::{
@@ -194,7 +195,11 @@ pub fn run() {
             cmd_library_clear,
             cmd_ai_providers_list,
             cmd_ai_provider_save,
-            cmd_ai_provider_delete
+            cmd_ai_provider_delete,
+            cmd_ai_model_catalog,
+            cmd_image_chunk_webtoon,
+            cmd_image_build_mosaic,
+            cmd_image_compress_page
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

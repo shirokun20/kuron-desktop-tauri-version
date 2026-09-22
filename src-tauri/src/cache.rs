@@ -39,6 +39,47 @@ impl ImageCache {
     ) -> Result<Option<Vec<u8>>, AppError> {
         self.inner.get(&Self::key(source_id, content_id, page))
     }
+
+    pub fn has_page(&self, source_id: &str, content_id: &str, page: u32) -> bool {
+        self.page(source_id, content_id, page)
+            .map(|o| o.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Hapus seluruh halaman satu konten (`$root/$sourceId/$contentId/`).
+    pub fn remove_content(&self, source_id: &str, content_id: &str) -> Result<(), AppError> {
+        for part in [source_id, content_id] {
+            if part.is_empty() || part.contains("..") || part.contains('/') || part.contains('\\')
+            {
+                return Err(AppError::Validation(format!("path komponen buruk: {part}")));
+            }
+        }
+        let dir = self.inner.root().join(source_id).join(content_id);
+        if dir.exists() {
+            std::fs::remove_dir_all(dir)?;
+        }
+        Ok(())
+    }
+}
+
+impl crate::domain::repositories::PageCache for ImageCache {
+    fn has(&self, source_id: &str, content_id: &str, page: u32) -> bool {
+        self.has_page(source_id, content_id, page)
+    }
+
+    fn put(
+        &self,
+        source_id: &str,
+        content_id: &str,
+        page: u32,
+        bytes: &[u8],
+    ) -> Result<(), AppError> {
+        self.cache_page(source_id, content_id, page, bytes)
+    }
+
+    fn remove_content(&self, source_id: &str, content_id: &str) -> Result<(), AppError> {
+        ImageCache::remove_content(self, source_id, content_id)
+    }
 }
 
 #[cfg(test)]

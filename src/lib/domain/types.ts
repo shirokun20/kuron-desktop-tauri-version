@@ -110,3 +110,13 @@ has_key: boolean, };
 
 export type AiProviderInput = { id: string | null, name: string, kind: AiProviderKind, base_url: string, model: string, };
 
+export type AiModelOption = {
+/**
+ * ID model sesuai daftar API provider.
+ */
+id: string,
+/**
+ * Label human-readable; `None` = tampilkan `id`.
+ */
+label: string | null, is_vision: boolean | null, };
+

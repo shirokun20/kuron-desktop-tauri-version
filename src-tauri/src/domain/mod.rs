@@ -9,7 +9,7 @@ mod ts_export;
 pub mod value_objects;
 
 pub use entities::{
-    ai_provider::{AiProvider, AiProviderInput, AiProviderKind},
+    ai_provider::{AiModelOption, AiProvider, AiProviderInput, AiProviderKind},
     ai_translation::{BubbleBox, PageTranslation},
     chapter::Chapter,
     comment::Comment,
@@ -96,6 +96,7 @@ mod roundtrip_tests {
         assert_roundtrip(&DownloadTask {
             chapter_id: "c1".into(),
             content_id: "m1".into(),
+            source_id: "nhentai".into(),
             state: DownloadState::Downloading { page: 3, total: 40 },
         });
     }

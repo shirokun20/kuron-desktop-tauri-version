@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriRuntime } from "./platform";
 import type {
+  AiModelOption,
   AiProvider,
   AiProviderInput,
+  AiProviderKind,
   AppInfo,
   Chapter,
   Comment,
@@ -70,6 +72,13 @@ export const api = {
     }),
   pageImages: (chapterId: string, source?: string): Promise<PageImageResult[]> =>
     call("cmd_get_page_images", { chapterId, source: source ?? null }),
+  // image_ops (Fase 3): payload base64; backend spawn_blocking.
+  imageChunkWebtoon: (data: string, maxChunkH: number): Promise<string[]> =>
+    call("cmd_image_chunk_webtoon", { data, maxChunkH }),
+  imageBuildMosaic: (data: string, boxes: number[]): Promise<string> =>
+    call("cmd_image_build_mosaic", { data, boxes }),
+  imageCompressPage: (data: string, maxDim: number): Promise<string> =>
+    call("cmd_image_compress_page", { data, maxDim }),
   related: (contentId: string, source?: string): Promise<Content[]> =>
     call("cmd_get_related", { contentId, source: source ?? null }),
   comments: (contentId: string, source?: string): Promise<Comment[]> =>
@@ -106,4 +115,8 @@ export const api = {
     call("cmd_ai_provider_save", { provider, apiKey }),
   aiProviderDelete: (id: string): Promise<boolean> =>
     call("cmd_ai_provider_delete", { id }),
+  // LOV model live (GET /models per jenis); apiKey = yang diketik form,
+  // dipakai sekali di backend untuk listing, tak disimpan.
+  aiModelCatalog: (kind: AiProviderKind, apiKey: string): Promise<AiModelOption[]> =>
+    call("cmd_ai_model_catalog", { kind, apiKey }),
 };

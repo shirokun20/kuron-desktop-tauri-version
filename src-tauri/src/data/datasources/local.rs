@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS chapters (
 CREATE TABLE IF NOT EXISTS downloads (
   chapter_id TEXT PRIMARY KEY,
   content_id TEXT NOT NULL,
+  source_id TEXT NOT NULL DEFAULT '',
   state_json TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS translation_cache (
@@ -91,10 +92,17 @@ impl SqliteDs {
     }
 
     fn migrate(&self) -> Result<(), AppError> {
-        self.conn
+        let conn = self
+            .conn
             .lock()
-            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?
-            .execute_batch(SCHEMA)?;
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
+        conn.execute_batch(SCHEMA)?;
+        // Upgrade skema lama: kolom source_id di downloads (8.1).
+        // `IF NOT EXISTS` tak didukung ALTER di SQLite lama → abaikan bila sudah ada.
+        let _ = conn.execute(
+            "ALTER TABLE downloads ADD COLUMN source_id TEXT NOT NULL DEFAULT ''",
+            [],
+        );
         Ok(())
     }
 
@@ -338,6 +346,7 @@ impl SqliteDs {
         &self,
         chapter_id: &str,
         content_id: &str,
+        source_id: &str,
         state_json: &str,
     ) -> Result<(), AppError> {
         let conn = self
@@ -345,9 +354,13 @@ impl SqliteDs {
             .lock()
             .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
         conn.execute(
-            "INSERT INTO downloads (chapter_id, content_id, state_json) VALUES (?1, ?2, ?3)
-             ON CONFLICT(chapter_id) DO UPDATE SET state_json=excluded.state_json",
-            params![chapter_id, content_id, state_json],
+            "INSERT INTO downloads (chapter_id, content_id, source_id, state_json)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(chapter_id) DO UPDATE SET
+               content_id=excluded.content_id,
+               source_id=excluded.source_id,
+               state_json=excluded.state_json",
+            params![chapter_id, content_id, source_id, state_json],
         )?;
         Ok(())
     }
@@ -364,6 +377,52 @@ impl SqliteDs {
         )
         .optional()
         .map_err(AppError::from)
+    }
+
+    pub fn get_download_row(
+        &self,
+        chapter_id: &str,
+    ) -> Result<Option<(String, String, String)>, AppError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
+        conn.query_row(
+            "SELECT content_id, source_id, state_json FROM downloads WHERE chapter_id = ?1",
+            params![chapter_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(AppError::from)
+    }
+
+    pub fn list_download_rows(&self) -> Result<Vec<(String, String, String, String)>, AppError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT chapter_id, content_id, source_id, state_json FROM downloads
+             ORDER BY chapter_id",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn delete_download(&self, chapter_id: &str) -> Result<bool, AppError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
+        let n = conn.execute(
+            "DELETE FROM downloads WHERE chapter_id = ?1",
+            params![chapter_id],
+        )?;
+        Ok(n > 0)
     }
 
     pub fn put_translation(&self, key: &str, data: &[u8]) -> Result<(), AppError> {
@@ -602,6 +661,10 @@ impl FileCacheDs {
             .sum())
     }
 
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     fn evict_if_needed(&self) -> Result<(), AppError> {
         let mut files = walk_files(&self.root)?;
         let mut total: u64 = files.iter().map(|(_, size, _)| *size).sum();
@@ -708,11 +771,19 @@ mod tests {
         ds.set_favorite("m1", false).unwrap();
         assert!(ds.list_favorites().unwrap().is_empty());
         // downloads + translation cache
-        ds.save_download("c1", "m1", r#"{"state":"done"}"#).unwrap();
+        ds.save_download("c1", "m1", "nhentai", r#"{"state":"done"}"#)
+            .unwrap();
         assert_eq!(
             ds.get_download("c1").unwrap().unwrap(),
             r#"{"state":"done"}"#
         );
+        let rows = ds.list_download_rows().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "c1");
+        assert_eq!(rows[0].2, "nhentai");
+        assert!(ds.delete_download("c1").unwrap());
+        assert!(!ds.delete_download("c1").unwrap());
+        assert!(ds.list_download_rows().unwrap().is_empty());
         ds.put_translation("k1", b"data").unwrap();
         assert_eq!(ds.get_translation("k1").unwrap().unwrap(), b"data");
         // SearchFilter tetap serde-bersih (dipakai repo nanti).

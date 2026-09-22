@@ -865,6 +865,7 @@
     flex-shrink: 0;
   }
   .field {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -886,6 +887,32 @@
     background: var(--muted);
     color: inherit;
     font-size: 14px;
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease;
+  }
+  .field input:hover,
+  .field select:hover {
+    border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  }
+  /* LOV (dropdown): chevron custom seragam lintas OS */
+  .field select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 34px;
+    cursor: pointer;
+  }
+  .field:has(> select)::after {
+    content: "";
+    position: absolute;
+    right: 13px;
+    bottom: 16px;
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid var(--muted-foreground);
+    border-bottom: 2px solid var(--muted-foreground);
+    transform: rotate(45deg);
+    pointer-events: none;
   }
   .manual {
     padding: 0 14px 14px;
