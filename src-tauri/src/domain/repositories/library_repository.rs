@@ -16,8 +16,7 @@ use crate::{
 pub trait LibraryRepository: Send + Sync {
     /// Simpan/upsert posisi baca + snapshot display
     /// (ala `UserDataRepository.saveHistory` yang membawa `History` penuh).
-    async fn record_history(&self, content: &Content, position: i64)
-        -> Result<(), AppError>;
+    async fn record_history(&self, content: &Content, position: i64) -> Result<(), AppError>;
     /// Riwayat terbaru dulu, siap-display (ala `getHistory`).
     async fn list_history(&self, limit: i64) -> Result<Vec<HistoryItem>, AppError>;
     /// Buang satu entri riwayat (ala `removeFromHistory`).
@@ -39,11 +38,7 @@ pub trait LibraryRepository: Send + Sync {
 /// bisa dipakai langsung oleh use case generik.
 #[async_trait]
 impl<R: LibraryRepository + ?Sized> LibraryRepository for Arc<R> {
-    async fn record_history(
-        &self,
-        content: &Content,
-        position: i64,
-    ) -> Result<(), AppError> {
+    async fn record_history(&self, content: &Content, position: i64) -> Result<(), AppError> {
         (**self).record_history(content, position).await
     }
 

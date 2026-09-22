@@ -9,6 +9,7 @@ mod ts_export;
 pub mod value_objects;
 
 pub use entities::{
+    ai_provider::{AiProvider, AiProviderInput, AiProviderKind},
     ai_translation::{BubbleBox, PageTranslation},
     chapter::Chapter,
     comment::Comment,
@@ -114,6 +115,22 @@ mod roundtrip_tests {
         assert_roundtrip(&GlossaryEntry {
             source: "senpai".into(),
             target: "kakak kelas".into(),
+        });
+        assert_roundtrip(&AiProviderKind::OpenAi);
+        assert_roundtrip(&AiProvider {
+            id: "openai".into(),
+            name: "OpenAI".into(),
+            kind: AiProviderKind::OpenAi,
+            base_url: "https://api.openai.com/v1".into(),
+            model: "gpt-4o-mini".into(),
+            has_key: true,
+        });
+        assert_roundtrip(&AiProviderInput {
+            id: None,
+            name: "Kunci Pribadi".into(),
+            kind: AiProviderKind::Custom,
+            base_url: "https://llm.example/v1".into(),
+            model: "llama-3".into(),
         });
         assert_roundtrip(&SearchFilter::default());
         assert_roundtrip(&SearchFilter {

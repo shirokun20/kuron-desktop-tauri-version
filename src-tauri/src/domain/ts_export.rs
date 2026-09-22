@@ -11,9 +11,9 @@ use crate::{
         ExtensionManifest, ManifestEntry, ManifestMeta, ZipPreview, ZipSourceCandidate,
     },
     domain::{
-        BubbleBox, Chapter, Comment, Content, DownloadState, DownloadTask, GlossaryEntry, Hello,
-        HistoryItem, Language, PageImageResult, PageTranslation, ReaderSettings, ReadingMode,
-        SearchFilter, SourceId, Tag,
+        AiProvider, AiProviderInput, AiProviderKind, BubbleBox, Chapter, Comment, Content,
+        DownloadState, DownloadTask, GlossaryEntry, Hello, HistoryItem, Language, PageImageResult,
+        PageTranslation, ReaderSettings, ReadingMode, SearchFilter, SourceId, Tag,
     },
 };
 
@@ -45,6 +45,9 @@ fn export_types_ts() {
         HistoryItem::decl(&cfg),
         Comment::decl(&cfg),
         Tag::decl(&cfg),
+        AiProviderKind::decl(&cfg),
+        AiProvider::decl(&cfg),
+        AiProviderInput::decl(&cfg),
     ];
 
     let mut out = String::from(
@@ -55,6 +58,9 @@ fn export_types_ts() {
         out.push_str(decl);
         out.push_str("\n\n");
     }
+    // ts-rs menaruh spasi di ujung baris sebelum doc-comment; buang agar
+    // `git diff --check` bersih.
+    let out: String = out.lines().map(|l| format!("{}\n", l.trim_end())).collect();
 
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/lib/domain/types.ts");
     std::fs::write(&path, &out).unwrap();
@@ -69,4 +75,7 @@ fn export_types_ts() {
     assert!(out.contains("type HistoryItem ="));
     assert!(out.contains("type Comment ="));
     assert!(out.contains("type Tag ="));
+    assert!(out.contains("type AiProvider ="));
+    assert!(out.contains("type AiProviderInput ="));
+    assert!(out.contains("type AiProviderKind ="));
 }

@@ -1386,7 +1386,10 @@ impl GenericRestAdapter {
     /// tipe = `group` (genre/theme/format/content); count tak ada → 0.
     fn md_tags_of(attrs: &serde_json::Value) -> Vec<crate::domain::Tag> {
         let empty = vec![];
-        let arr = attrs.get("tags").and_then(|t| t.as_array()).unwrap_or(&empty);
+        let arr = attrs
+            .get("tags")
+            .and_then(|t| t.as_array())
+            .unwrap_or(&empty);
         arr.iter()
             .filter_map(|t| {
                 let tag_attrs = t.get("attributes")?;
@@ -1396,10 +1399,18 @@ impl GenericRestAdapter {
                     .and_then(|s| s.as_str())
                     .filter(|s| !s.is_empty())
                     .or_else(|| {
-                        names.as_object()?.values().filter_map(|s| s.as_str()).find(|s| !s.is_empty())
+                        names
+                            .as_object()?
+                            .values()
+                            .filter_map(|s| s.as_str())
+                            .find(|s| !s.is_empty())
                     })?;
                 Some(crate::domain::Tag {
-                    id: t.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string(),
+                    id: t
+                        .get("id")
+                        .and_then(|i| i.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     name: name.to_string(),
                     tag_type: tag_attrs
                         .get("group")
@@ -1430,10 +1441,18 @@ impl GenericRestAdapter {
     /// Sinopsis (mobile `fields.description`): `en` lalu bahasa lain.
     fn md_description_of(attrs: &serde_json::Value) -> Option<String> {
         let desc = attrs.get("description")?;
-        if let Some(en) = desc.get("en").and_then(|s| s.as_str()).filter(|s| !s.is_empty()) {
+        if let Some(en) = desc
+            .get("en")
+            .and_then(|s| s.as_str())
+            .filter(|s| !s.is_empty())
+        {
             return Some(en.to_string());
         }
-        desc.as_object()?.values().filter_map(|s| s.as_str()).find(|s| !s.is_empty()).map(str::to_string)
+        desc.as_object()?
+            .values()
+            .filter_map(|s| s.as_str())
+            .find(|s| !s.is_empty())
+            .map(str::to_string)
     }
 
     /// Statistik (mobile `followsPath`/`ratingPath`): `(follows, rating)`.
@@ -1441,7 +1460,10 @@ impl GenericRestAdapter {
         let stats = serde_json::from_str::<serde_json::Value>(body)
             .ok()
             .and_then(|v| Some(v.get("statistics")?.get(id)?.clone()));
-        let follows = stats.as_ref().and_then(|s| s.get("follows")).and_then(|f| f.as_i64().or_else(|| f.as_u64().map(|n| n as i64)));
+        let follows = stats
+            .as_ref()
+            .and_then(|s| s.get("follows"))
+            .and_then(|f| f.as_i64().or_else(|| f.as_u64().map(|n| n as i64)));
         let rating = stats
             .as_ref()
             .and_then(|s| s.get("rating"))
@@ -1468,7 +1490,11 @@ impl GenericRestAdapter {
             .and_then(|a| a.endpoints.get("mangaByIds"))
             .and_then(|e| e.as_str())
             .unwrap_or(MANGADEX_BY_IDS);
-        let url = format!("{}{}", self.md_base(), template.replace("{ids}", &ids.join("&ids[]=")));
+        let url = format!(
+            "{}{}",
+            self.md_base(),
+            template.replace("{ids}", &ids.join("&ids[]="))
+        );
         let body = self.http.get(&url, "mangadex").await?;
         let mut items = Self::parse_mangadex(&body)?;
         items.sort_by_key(|m| ids.iter().position(|id| id == &m.id).unwrap_or(usize::MAX));
@@ -1484,7 +1510,11 @@ impl GenericRestAdapter {
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
         for item in data {
-            let rels = item.get("relationships").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+            let rels = item
+                .get("relationships")
+                .and_then(|r| r.as_array())
+                .cloned()
+                .unwrap_or_default();
             for r in rels {
                 if r.get("type").and_then(|t| t.as_str()) != Some("manga") {
                     continue;
@@ -1502,7 +1532,13 @@ impl GenericRestAdapter {
     /// URL chapter feed (murni, mobile `fetchChapters`): isi `{id}` +
     /// `{language}` (kosong → param dibuang), lalu UPSERT `offset`
     /// (load-more bottomsheet; contoh mobile `loadedForLang`).
-    fn md_chapters_url(template: &str, base: &str, manga_id: &str, lang: Option<&str>, offset: Option<u32>) -> String {
+    fn md_chapters_url(
+        template: &str,
+        base: &str,
+        manga_id: &str,
+        lang: Option<&str>,
+        offset: Option<u32>,
+    ) -> String {
         let filled = fill_url(
             template,
             &[("id", manga_id), ("language", lang.unwrap_or(""))],
@@ -1552,8 +1588,7 @@ impl GenericRestAdapter {
         for lang in tries {
             let url = Self::md_chapters_url(&template, &self.md_base(), manga_id, lang, offset);
             let body = self.http.get(&url, "mangadex").await?;
-            let items =
-                Self::parse_mangadex_chapters(&body, manga_id, offset.unwrap_or(0))?;
+            let items = Self::parse_mangadex_chapters(&body, manga_id, offset.unwrap_or(0))?;
             if !items.is_empty() || lang.is_none() {
                 return Ok(items);
             }
@@ -2560,7 +2595,8 @@ mod tests {
         assert!(!home.is_empty(), "allGalleries kosong");
         assert!(home[0].language.is_some(), "bahasa hilang: {:?}", home[0]);
         let chapters =
-            tauri::async_runtime::block_on(rest.chapters_mangadex(&items[0].id, None, None)).unwrap();
+            tauri::async_runtime::block_on(rest.chapters_mangadex(&items[0].id, None, None))
+                .unwrap();
         assert!(!chapters.is_empty(), "chapter kosong untuk {}", items[0].id);
         let internal = chapters.iter().find(|c| !c.is_external);
         if let Some(ch) = internal {
@@ -3043,7 +3079,10 @@ mod nhentai_tests {
         assert_eq!(detail.tags.len(), 2);
         assert_eq!(detail.tags[0].name, "Aksi");
         assert_eq!(detail.tags[1].name, "Petualangan");
-        assert!(detail.tags.iter().all(|t| t.tag_type == "tag" && t.count == 0));
+        assert!(detail
+            .tags
+            .iter()
+            .all(|t| t.tag_type == "tag" && t.count == 0));
         let chapters =
             GenericScraperAdapter::parse_chapters(DETAIL, &detail_url, "x", &cfg).unwrap();
         assert_eq!(chapters.len(), 2);
@@ -3239,10 +3278,7 @@ mod nhentai_tests {
                 "assetHosts": {"image": "https://i.nhentai.net", "thumbnail": "https://t.nhentai.net"}}"#,
         )
         .unwrap();
-        let a = NhentaiApiAdapter::from_config(
-            HttpClientManager::without_proxy().unwrap(),
-            &cfg,
-        );
+        let a = NhentaiApiAdapter::from_config(HttpClientManager::without_proxy().unwrap(), &cfg);
         let v: serde_json::Value = serde_json::from_str(
             r#"{"result": [
                 {"id": 508415, "english_title": "Terkait Satu",
@@ -3330,10 +3366,7 @@ mod nhentai_tests {
                 "network": {"rateLimit": {"minDelayMs": 0}}}"#,
         )
         .unwrap();
-        let a = NhentaiApiAdapter::from_config(
-            HttpClientManager::without_proxy().unwrap(),
-            &cfg,
-        );
+        let a = NhentaiApiAdapter::from_config(HttpClientManager::without_proxy().unwrap(), &cfg);
         assert_eq!(
             a.resolve_nh_avatar("/a/1.png").as_deref(),
             Some("https://av.custom.net/a/1.png")

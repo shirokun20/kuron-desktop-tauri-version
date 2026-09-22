@@ -5,17 +5,22 @@
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
+    core::constants::APP_ID,
     data::{
         datasources::{
             config::SourceConfigs,
+            local::{KvStoreDs, SecretStore},
             remote::{
                 ehentai_config, hitomi_config, FieldMap, GenericRestAdapter, GenericScraperAdapter,
                 NhentaiApiAdapter, PaginationCursors, SourceConfig,
             },
         },
-        repositories::{ContentRepositoryImpl, LibraryRepositoryImpl, MockContentRepository},
+        repositories::{
+            AiProviderRepositoryImpl, ContentRepositoryImpl, LibraryRepositoryImpl,
+            MockContentRepository,
+        },
     },
-    domain::repositories::{ContentRepository, LibraryRepository},
+    domain::repositories::{AiProviderRepository, ContentRepository, LibraryRepository},
     network::HttpClientManager,
 };
 
@@ -26,6 +31,8 @@ pub struct AppState {
     pub content_repo: Arc<dyn ContentRepository>,
     /// Library lokal SQLite (riwayat + favorit, 8.3).
     pub library: Arc<dyn LibraryRepository>,
+    /// Provider AI BYOK: metadata di KV, kunci di keychain OS (9.2).
+    pub ai_providers: Arc<dyn AiProviderRepository>,
     pub http: HttpClientManager,
     /// Dir config ekstensi ter-install (`{data}/extensions`).
     pub ext_dir: PathBuf,
@@ -47,6 +54,13 @@ fn default_db_path() -> PathBuf {
         .join("kuron.db")
 }
 
+fn default_kv_path() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("id.nhasix.kuron")
+        .join("kv.json")
+}
+
 impl AppState {
     pub fn new(content_repo: Arc<dyn ContentRepository>) -> Self {
         let ext_dir = default_ext_dir();
@@ -58,17 +72,20 @@ impl AppState {
                 Ok(repo) => Arc::new(repo),
                 Err(e) => {
                     tracing::warn!("library fallback memori: {e}");
-                    Arc::new(
-                        LibraryRepositoryImpl::open_in_memory()
-                            .expect("sqlite memori init"),
-                    )
+                    Arc::new(LibraryRepositoryImpl::open_in_memory().expect("sqlite memori init"))
                 }
             };
+        // AI provider BYOK: metadata di KV file; kunci hanya di keychain OS.
+        let ai_providers: Arc<dyn AiProviderRepository> = Arc::new(AiProviderRepositoryImpl::new(
+            KvStoreDs::open(&default_kv_path()).expect("kv init"),
+            SecretStore::new(APP_ID),
+        ));
         Self {
             app_name: "Kuron Desktop".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             content_repo,
             library,
+            ai_providers,
             http: HttpClientManager::new().expect("tls backend init"),
             ext_dir,
             cursors: PaginationCursors::default(),
@@ -363,6 +380,10 @@ mod tests {
             version: "0".into(),
             content_repo: Arc::new(MockContentRepository),
             library: Arc::new(LibraryRepositoryImpl::open_in_memory().unwrap()),
+            ai_providers: Arc::new(AiProviderRepositoryImpl::new(
+                KvStoreDs::open(&dir.join("kv.json")).unwrap(),
+                SecretStore::new_memory(),
+            )),
             http: HttpClientManager::new().expect("tls backend init"),
             ext_dir: dir.to_path_buf(),
             cursors: PaginationCursors::default(),

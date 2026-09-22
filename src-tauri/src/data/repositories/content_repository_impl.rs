@@ -55,7 +55,12 @@ impl ContentRepository for MockContentRepository {
         })
     }
 
-    async fn get_chapters(&self, _content_id: &str, _language: Option<&str>, _offset: Option<u32>) -> Result<Vec<Chapter>, AppError> {
+    async fn get_chapters(
+        &self,
+        _content_id: &str,
+        _language: Option<&str>,
+        _offset: Option<u32>,
+    ) -> Result<Vec<Chapter>, AppError> {
         Ok(vec![])
     }
 
@@ -221,7 +226,12 @@ impl ContentRepository for ContentRepositoryImpl {
         Ok(Content::from(model))
     }
 
-    async fn get_chapters(&self, content_id: &str, language: Option<&str>, offset: Option<u32>) -> Result<Vec<Chapter>, AppError> {
+    async fn get_chapters(
+        &self,
+        content_id: &str,
+        language: Option<&str>,
+        offset: Option<u32>,
+    ) -> Result<Vec<Chapter>, AppError> {
         if self.is_nhentai() {
             return Ok(vec![Chapter {
                 id: format!("{content_id}-1"),
@@ -234,7 +244,10 @@ impl ContentRepository for ContentRepositoryImpl {
             }]);
         }
         if self.is_mangadex() {
-            let chapters = self.rest.chapters_mangadex(content_id, language, offset).await?;
+            let chapters = self
+                .rest
+                .chapters_mangadex(content_id, language, offset)
+                .await?;
             return Ok(chapters);
         }
         let url = self.config.detail_url(content_id);

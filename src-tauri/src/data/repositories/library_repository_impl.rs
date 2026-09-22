@@ -31,11 +31,7 @@ impl LibraryRepositoryImpl {
 
 #[async_trait]
 impl LibraryRepository for LibraryRepositoryImpl {
-    async fn record_history(
-        &self,
-        content: &Content,
-        position: i64,
-    ) -> Result<(), AppError> {
+    async fn record_history(&self, content: &Content, position: i64) -> Result<(), AppError> {
         self.db.record_history(content, position)
     }
 

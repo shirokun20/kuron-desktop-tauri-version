@@ -6,12 +6,12 @@ pub mod usecases;
 
 pub use usecases::{
     clear_history::ClearHistoryUseCase, clear_library::ClearLibraryUseCase,
-    get_chapters::GetChaptersUseCase, get_comments::GetCommentsUseCase,
-    get_content_detail::GetContentDetailUseCase,
+    delete_ai_provider::DeleteAiProviderUseCase, get_chapters::GetChaptersUseCase,
+    get_comments::GetCommentsUseCase, get_content_detail::GetContentDetailUseCase,
     get_home_feed::GetHomeFeedUseCase, get_page_images::GetPageImagesUseCase,
-    get_related_content::GetRelatedContentUseCase,
+    get_related_content::GetRelatedContentUseCase, list_ai_providers::ListAiProvidersUseCase,
     list_favorites::ListFavoritesUseCase, list_history::ListHistoryUseCase,
     record_history::RecordHistoryUseCase, remove_history::RemoveHistoryUseCase,
-    say_hello::SayHelloUseCase,
+    save_ai_provider::SaveAiProviderUseCase, say_hello::SayHelloUseCase,
     search_content::SearchContentUseCase, set_favorite::SetFavoriteUseCase,
 };

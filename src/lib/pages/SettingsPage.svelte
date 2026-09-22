@@ -1,12 +1,15 @@
 <script lang="ts">
-  // SettingsPage — halaman Pengaturan (9.1, spec `settings-ai`):
+  // SettingsPage — halaman Pengaturan (9.1 + 9.2, spec `settings-ai`):
   // seksi tampilan (tema + blur thumbnail default-on), pembaca, jaringan,
-  // data. Preferensi persist di localStorage (`kuron.settings`).
+  // AI provider BYOK (keychain), data. Preferensi persist di localStorage
+  // (`kuron.settings`).
   import { settingsStore } from "../stores/settings.svelte";
   import { themeStore, MODES } from "../stores/theme.svelte";
   import { platformStore } from "../stores/platform.svelte";
   import { libraryStore } from "../stores/library.svelte";
+  import { aiProvidersStore } from "../stores/aiProviders.svelte";
   import type { ReaderMode } from "../stores/settingsPersist";
+  import type { AiProviderKind } from "../domain/types";
 
   const READER_MODES: { id: ReaderMode; label: string }[] = [
     { id: "paginated", label: "Per halaman" },
@@ -14,9 +17,78 @@
     { id: "webtoon", label: "Webtoon" },
   ];
 
+  const AI_KINDS: { id: AiProviderKind; label: string }[] = [
+    { id: "openai", label: "OpenAI" },
+    { id: "gemini", label: "Gemini" },
+    { id: "cohere", label: "Cohere" },
+    { id: "custom", label: "Kustom (OpenAI-compatible)" },
+  ];
+
+  const AI_PRESETS: Record<
+    AiProviderKind,
+    { base: string; model: string }
+  > = {
+    openai: { base: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+    gemini: {
+      base: "https://generativelanguage.googleapis.com/v1beta",
+      model: "gemini-2.0-flash",
+    },
+    cohere: { base: "https://api.cohere.com/v2", model: "command-r" },
+    custom: { base: "", model: "" },
+  };
+
   let runtimeLabel = $derived(
     platformStore.snapshot.runtime === "tauri" ? "Aplikasi desktop" : "Mode web",
   );
+  let isDesktop = $derived(platformStore.snapshot.runtime === "tauri");
+  let aiKind = $state<AiProviderKind>("openai");
+  let aiName = $state("");
+  let aiBaseUrl = $state(AI_PRESETS.openai.base);
+  let aiModel = $state(AI_PRESETS.openai.model);
+  let aiKey = $state("");
+  let aiSaving = $state(false);
+
+  $effect(() => {
+    void aiProvidersStore.load();
+  });
+
+  function onAiKindChange(k: AiProviderKind) {
+    aiKind = k;
+    aiBaseUrl = AI_PRESETS[k].base;
+    aiModel = AI_PRESETS[k].model;
+  }
+
+  async function saveAiProvider() {
+    if (aiSaving) return;
+    aiSaving = true;
+    try {
+      await aiProvidersStore.save(
+        {
+          id: null,
+          name: aiName,
+          kind: aiKind,
+          base_url: aiBaseUrl,
+          model: aiModel,
+        },
+        aiKey,
+      );
+      aiName = "";
+      aiKey = "";
+    } catch {
+      // error → aiProvidersStore.error tampil di atas
+    } finally {
+      aiSaving = false;
+    }
+  }
+
+  async function removeAiProvider(id: string) {
+    if (!confirm("Hapus provider beserta kuncinya?")) return;
+    try {
+      await aiProvidersStore.remove(id);
+    } catch {
+      // error → store.error
+    }
+  }
 
   async function clearHistory() {
     if (!confirm("Hapus semua riwayat baca?")) return;
@@ -40,6 +112,9 @@
 
   {#if libraryStore.error}
     <p class="err">{libraryStore.error}</p>
+  {/if}
+  {#if aiProvidersStore.error}
+    <p class="err">{aiProvidersStore.error}</p>
   {/if}
 
   <article class="card">
@@ -167,6 +242,102 @@
       </div>
       <span class="value">{runtimeLabel}</span>
     </div>
+  </article>
+
+  <article class="card">
+    <h3>AI · Terjemahan</h3>
+    <div class="row">
+      <div class="txt">
+        <strong>Status terjemahan</strong>
+        {#if !isDesktop}
+          <p class="hint">
+            Mode web: kelola kunci hanya di aplikasi desktop — keychain OS
+            tidak tersedia di browser, jadi terjemahan nonaktif di sini.
+          </p>
+        {:else if aiProvidersStore.ready}
+          <p class="hint ok">
+            Aktif — {aiProvidersStore.readyCount} provider dengan kunci
+            tersimpan di keychain OS. Pemilihan provider di reader menyusul
+            bersama fitur terjemahan (tugas 7.2).
+          </p>
+        {:else}
+          <p class="hint">
+            Nonaktif — tanpa kunci API provider, fitur terjemahan mati.
+            Simpan kunci OpenAI / Gemini / Cohere / kustom di bawah untuk
+            mengaktifkan (disimpan di keychain, bukan file).
+          </p>
+        {/if}
+      </div>
+      <span class="value">{aiProvidersStore.providers.length}</span>
+    </div>
+    {#each aiProvidersStore.providers as p (p.id)}
+      <div class="row">
+        <div class="txt">
+          <strong>{p.name}</strong>
+          <p class="hint">
+            {p.kind} · {p.model} · {p.has_key
+              ? "kunci tersimpan di keychain"
+              : "tanpa kunci — terjemahan nonaktif"}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="ghost danger"
+          onclick={() => removeAiProvider(p.id)}
+        >
+          Hapus
+        </button>
+      </div>
+    {/each}
+    {#if isDesktop}
+      <div class="ai-form">
+        <label class="field">
+          <span>Jenis provider</span>
+          <select
+            value={aiKind}
+            onchange={(e) =>
+              onAiKindChange(e.currentTarget.value as AiProviderKind)}
+          >
+            {#each AI_KINDS as k (k.id)}
+              <option value={k.id}>{k.label}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="field">
+          <span>Nama tampil</span>
+          <input
+            type="text"
+            placeholder="mis. Kunci Pribadi"
+            bind:value={aiName}
+          />
+        </label>
+        <label class="field">
+          <span>Base URL</span>
+          <input type="text" bind:value={aiBaseUrl} />
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <input type="text" bind:value={aiModel} />
+        </label>
+        <label class="field">
+          <span>Kunci API</span>
+          <input
+            type="password"
+            placeholder="tidak pernah ditampilkan lagi"
+            autocomplete="off"
+            bind:value={aiKey}
+          />
+        </label>
+        <button
+          type="button"
+          class="ghost primary"
+          disabled={aiSaving || !aiName.trim() || !aiKey.trim()}
+          onclick={saveAiProvider}
+        >
+          {aiSaving ? "Menyimpan…" : "Simpan provider"}
+        </button>
+      </div>
+    {/if}
   </article>
 
   <article class="card">
@@ -375,6 +546,48 @@
   .ghost:disabled {
     opacity: 0.45;
     cursor: default;
+  }
+  .ghost.primary {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    border-color: var(--primary);
+  }
+  .hint.ok {
+    color: var(--primary);
+  }
+  .ai-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 160px;
+    flex: 1 1 160px;
+  }
+  .field span {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted-foreground);
+  }
+  .field input,
+  .field select {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--background);
+    color: var(--foreground);
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+  .field input:focus,
+  .field select:focus {
+    outline: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
+    outline-offset: 1px;
   }
   .err {
     margin: 0;

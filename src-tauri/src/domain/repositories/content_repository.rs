@@ -19,7 +19,12 @@ pub trait HomeFeedRepository: Send + Sync {
 pub trait ContentRepository: HomeFeedRepository {
     async fn search(&self, filter: SearchFilter) -> Result<Vec<Content>, AppError>;
     async fn get_detail(&self, content_id: &str) -> Result<Content, AppError>;
-    async fn get_chapters(&self, content_id: &str, language: Option<&str>, offset: Option<u32>) -> Result<Vec<Chapter>, AppError>;
+    async fn get_chapters(
+        &self,
+        content_id: &str,
+        language: Option<&str>,
+        offset: Option<u32>,
+    ) -> Result<Vec<Chapter>, AppError>;
     async fn get_page_images(&self, chapter_id: &str) -> Result<Vec<PageImageResult>, AppError>;
     /// Galeri terkait (ala `GetRelatedContentUseCase`; kosong = tak didukung).
     async fn get_related_content(&self, content_id: &str) -> Result<Vec<Content>, AppError>;
@@ -46,7 +51,12 @@ impl<R: ContentRepository + ?Sized> ContentRepository for Arc<R> {
         (**self).get_detail(content_id).await
     }
 
-    async fn get_chapters(&self, content_id: &str, language: Option<&str>, offset: Option<u32>) -> Result<Vec<Chapter>, AppError> {
+    async fn get_chapters(
+        &self,
+        content_id: &str,
+        language: Option<&str>,
+        offset: Option<u32>,
+    ) -> Result<Vec<Chapter>, AppError> {
         (**self).get_chapters(content_id, language, offset).await
     }
 

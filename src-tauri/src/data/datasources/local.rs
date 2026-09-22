@@ -199,10 +199,7 @@ impl SqliteDs {
 
     /// Riwayat + snapshot konten + posisi + waktu untuk daftar UI.
     /// `is_favorite` diisi via `EXISTS` agar akurat per baris.
-    pub fn list_history_contents(
-        &self,
-        limit: i64,
-    ) -> Result<Vec<(Content, i64, i64)>, AppError> {
+    pub fn list_history_contents(&self, limit: i64) -> Result<Vec<(Content, i64, i64)>, AppError> {
         let conn = self
             .conn
             .lock()
@@ -284,9 +281,8 @@ impl SqliteDs {
             .conn
             .lock()
             .map_err(|e| AppError::Storage(format!("sqlite lock: {e}")))?;
-        let mut stmt = conn.prepare(
-            "SELECT content_id FROM favorites ORDER BY added_at DESC, rowid DESC",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT content_id FROM favorites ORDER BY added_at DESC, rowid DESC")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
     }

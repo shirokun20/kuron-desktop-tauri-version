@@ -5,38 +5,38 @@ export type Hello = { name: string, message: string, };
 
 export type AppInfo = { name: string, version: string, backend: string, };
 
-export type Content = { id: string, title: string, cover_url: string, source_id: string, upload_date: string | null, is_favorite: boolean, 
+export type Content = { id: string, title: string, cover_url: string, source_id: string, upload_date: string | null, is_favorite: boolean,
 /**
  * Jumlah halaman (badge kartu); None = tak diketahui sumber ini.
  */
-page_count: number | null, 
+page_count: number | null,
 /**
  * Kode bahasa ISO (en/ja/zh/id); None = tak diketahui.
  */
-language: string | null, 
+language: string | null,
 /**
  * Tag metadata (nhentai `tags[]`); kosong = sumber tak sediakan.
  */
-tags: Array<Tag>, 
+tags: Array<Tag>,
 /**
  * Bahasa terjemahan tersedia (MD `availableTranslatedLanguages`);
  * kosong = sumber tak sediakan. Chip bahasa baca dari sini (mobile).
  */
-available_languages: Array<string>, 
+available_languages: Array<string>,
 /**
  * Sinopsis (MD `description.en`); None = tak ada.
  */
-description: string | null, 
+description: string | null,
 /**
  * Skor rata-rata (MD `statistics.rating.average`); None = tak ada.
  */
-rating: number | null, 
+rating: number | null,
 /**
  * Jumlah favorit/pengikut (nh `num_favorites`, MD `statistics.follows`).
  */
 favorites: bigint | null, };
 
-export type Chapter = { id: string, content_id: string, title: string, order: number, is_external: boolean, external_url: string | null, 
+export type Chapter = { id: string, content_id: string, title: string, order: number, is_external: boolean, external_url: string | null,
 /**
  * Kode bahasa terjemahan (MangaDex `translatedLanguage`, mis. "en");
  * None = tak diketahui (scraper) → lane "unknown" ala mobile.
@@ -65,7 +65,7 @@ export type SourceId = string;
 
 export type Language = "En" | "Id" | "Zh" | { "Other": string };
 
-export type InstalledSource = { id: string, version: string, base_url: string, installed: boolean, icon_url: string | null, 
+export type InstalledSource = { id: string, version: string, base_url: string, installed: boolean, icon_url: string | null,
 /**
  * `ui.displayName` dari config sumber (nama tampil ala mobile).
  */
@@ -81,21 +81,32 @@ export type ZipSourceCandidate = { id: string, version: string, displayName: str
 
 export type ZipPreview = { token: string, sources: Array<ZipSourceCandidate>, };
 
-export type HistoryItem = { content_id: string, title: string, cover_url: string, source_id: string, 
+export type HistoryItem = { content_id: string, title: string, cover_url: string, source_id: string,
 /**
  * Halaman terakhir dibaca (1-based, ala `History.lastPage` mobile).
  */
-position: bigint, 
+position: bigint,
 /**
  * Terakhir dilihat, unix epoch detik (ala `History.lastViewed`).
  */
 updated_at: bigint, };
 
-export type Comment = { id: string, username: string, 
+export type Comment = { id: string, username: string,
 /**
  * Isi mentah (bisa HTML ala mobile) — UI render sebagai TEKS.
  */
 body: string, avatar_url: string | null, post_date: bigint | null, };
 
 export type Tag = { id: string, name: string, tag_type: string, count: bigint, };
+
+export type AiProviderKind = "openai" | "gemini" | "cohere" | "custom";
+
+export type AiProvider = { id: string, name: string, kind: AiProviderKind, base_url: string, model: string,
+/**
+ * True bila kunci tersimpan di keychain OS. Kunci asli tak pernah
+ * di-serialize ke frontend.
+ */
+has_key: boolean, };
+
+export type AiProviderInput = { id: string | null, name: string, kind: AiProviderKind, base_url: string, model: string, };
 

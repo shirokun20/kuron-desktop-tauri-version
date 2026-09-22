@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriRuntime } from "./platform";
 import type {
+  AiProvider,
+  AiProviderInput,
   AppInfo,
   Chapter,
   Comment,
@@ -98,4 +100,10 @@ export const api = {
     call("cmd_favorite_set", { content, fav }),
   favoriteList: (): Promise<Content[]> => call("cmd_favorite_list"),
   libraryClear: (): Promise<void> => call("cmd_library_clear"),
+  // AI BYOK (9.2): kunci hanya lewat argumen save; list tak pernah balikkan kunci.
+  aiProvidersList: (): Promise<AiProvider[]> => call("cmd_ai_providers_list"),
+  aiProviderSave: (provider: AiProviderInput, apiKey: string): Promise<AiProvider> =>
+    call("cmd_ai_provider_save", { provider, apiKey }),
+  aiProviderDelete: (id: string): Promise<boolean> =>
+    call("cmd_ai_provider_delete", { id }),
 };

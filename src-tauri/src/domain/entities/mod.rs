@@ -1,3 +1,4 @@
+pub mod ai_provider;
 pub mod ai_translation;
 pub mod chapter;
 pub mod comment;

@@ -246,7 +246,9 @@ mod tests {
     #[test]
     fn retry_backoff_doubles_per_attempt() {
         assert_eq!(
-            (0..3).map(|a| retry_backoff_ms(1000, a)).collect::<Vec<_>>(),
+            (0..3)
+                .map(|a| retry_backoff_ms(1000, a))
+                .collect::<Vec<_>>(),
             vec![1000, 2000, 4000]
         );
         assert_eq!(retry_backoff_ms(1, 0), 1);
