@@ -7,5 +7,6 @@ pub mod native;
 pub mod repositories;
 pub mod services;
 
+pub use native::bubble_detector::BubbleDetector;
 pub use repositories::content_repository_impl::{ContentRepositoryImpl, MockContentRepository};
 pub use services::http_fetcher_arc;

@@ -11,6 +11,7 @@ pub mod library_commands;
 
 pub use ai_commands::{
     cmd_ai_model_catalog, cmd_ai_provider_delete, cmd_ai_provider_save, cmd_ai_providers_list,
+    cmd_translate_page,
 };
 pub use content_commands::{
     cmd_get_chapters, cmd_get_comments, cmd_get_detail, cmd_get_page_images, cmd_get_related,
@@ -27,7 +28,8 @@ pub use extension_commands::{
 };
 pub use hello_commands::{cmd_app_info, cmd_hello_world, AppInfo};
 pub use image_commands::{
-    cmd_image_build_mosaic, cmd_image_chunk_webtoon, cmd_image_compress_page,
+    cmd_bubble_model_status, cmd_detect_bubbles, cmd_image_build_mosaic, cmd_image_chunk_webtoon,
+    cmd_image_compress_page,
 };
 pub use library_commands::{
     cmd_favorite_list, cmd_favorite_set, cmd_history_clear, cmd_history_list, cmd_history_record,

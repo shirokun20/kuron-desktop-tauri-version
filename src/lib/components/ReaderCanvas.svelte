@@ -8,8 +8,11 @@
   //   auto-retry 1×.
   import { cubicOut } from "svelte/easing";
   import { fly } from "svelte/transition";
+  import type { BubbleBox, PageTranslation } from "../domain/types";
   import type { ReaderMode } from "../stores/settingsPersist";
   import { paginate } from "../utils/readerLayout";
+  import BubbleOutline from "./BubbleOutline.svelte";
+  import TranslationOverlay from "./TranslationOverlay.svelte";
 
   const KEEP = 1;
 
@@ -23,6 +26,9 @@
     onfail,
     onretry,
     onok,
+    translations,
+    detected,
+    showTl = false,
   }: {
     pages: string[];
     mode: ReaderMode;
@@ -34,7 +40,32 @@
     onretry: (p: number) => void;
     /** Gambar sukses termuat → bersihkan flag gagal (pulih dari error sesaat). */
     onok: (p: number) => void;
+    /** Hasil terjemahan per halaman (1-based) — overlay 7.2. */
+    translations?: Map<number, PageTranslation>;
+    /** Bubble terdeteksi per halaman (outline biru, sebelum translate). */
+    detected?: Map<number, BubbleBox[]>;
+    /** Overlay terjemahan tampil (toggle toolbar). */
+    showTl?: boolean;
   } = $props();
+
+  /** Overlay untuk halaman p: hasil ada + toggle on + dimensi terukur. */
+  function tlFor(p: number): PageTranslation | undefined {
+    if (!showTl) return undefined;
+    const t = translations?.get(p);
+    if (!t || t.bubbles.length === 0 || !dims.get(p)) return undefined;
+    return t;
+  }
+
+  /** Outline biru: ada deteksi + dimensi terukur + belum ada hasil (hasil
+   *  menang — outline diganti teks terjemahan). */
+  function outlineFor(p: number): { boxes: BubbleBox[]; d: { w: number; h: number } } | undefined {
+    if (!showTl) return undefined;
+    if (translations?.get(p)?.bubbles.length) return undefined;
+    const boxes = detected?.get(p);
+    const d = dims.get(p);
+    if (!boxes?.length || !d) return undefined;
+    return { boxes, d };
+  }
 
   let listEl: HTMLElement | null = $state(null);
   let total = $derived(pages.length);
@@ -210,6 +241,7 @@
     {#if total > 0}
       {@const i = Math.min(total, Math.max(1, current)) - 1}
       {@const src = pages[i]}
+      <div class="paged-center">
       {#key i}
         <figure
           in:fly={{
@@ -228,34 +260,45 @@
             </div>
           {:else}
             {#key `${i + 1}-${nonce.get(i + 1) ?? 0}`}
-          <img
-            class="fit"
-            src={src}
-            alt={`Halaman ${i + 1}`}
-            draggable="false"
-            referrerpolicy="no-referrer"
-            onerror={() => markMiss(i + 1)}
-            onload={(e) => {
-              const el = e.currentTarget as HTMLImageElement;
-              markSeen(i + 1, el.naturalWidth, el.naturalHeight);
-            }}
-          />
+            {@const tl = tlFor(i + 1)}
+            {@const d = dims.get(i + 1)}
+            <div
+              class="pagebox"
+              style:aspect-ratio={d ? `${d.w} / ${d.h}` : undefined}
+            >
+              <img
+                class="fit"
+                src={src}
+                alt={`Halaman ${i + 1}`}
+                draggable="false"
+                referrerpolicy="no-referrer"
+                onerror={() => markMiss(i + 1)}
+                onload={(e) => {
+                  const el = e.currentTarget as HTMLImageElement;
+                  markSeen(i + 1, el.naturalWidth, el.naturalHeight);
+                }}
+              />
+              {#if tl && d}
+                <TranslationOverlay
+                  bubbles={tl.bubbles}
+                  imgW={d.w}
+                  imgH={d.h}
+                />
+              {:else}
+                {@const ol = outlineFor(i + 1)}
+                {#if ol}
+                  <BubbleOutline
+                    boxes={ol.boxes}
+                    imgW={ol.d.w}
+                    imgH={ol.d.h}
+                  />
+                {/if}
+              {/if}
+            </div>
             {/key}
           {/if}
         </figure>
       {/key}
-      <div class="paged-nav">
-        <button class="ghost" disabled={current <= 1} onclick={() => go(-1)}>
-          ← Sebelumnya
-        </button>
-        <span class="pos">{current} / {total}</span>
-        <button
-          class="ghost"
-          disabled={current >= total}
-          onclick={() => go(1)}
-        >
-          Berikutnya →
-        </button>
       </div>
     {/if}
   </div>
@@ -284,20 +327,40 @@
           </div>
         {:else}
           {#key `${p}-${nonce.get(p) ?? 0}`}
-            <img
-              class="vimg"
-              {src}
-              data-vpage={p}
-              alt={`Halaman ${p}`}
-              loading="lazy"
-              draggable="false"
-              referrerpolicy="no-referrer"
-              onerror={() => markMiss(p)}
-              onload={(e) => {
-                const el = e.currentTarget as HTMLImageElement;
-                markSeen(p, el.naturalWidth, el.naturalHeight);
-              }}
-            />
+            {@const tl = tlFor(p)}
+            {@const d = dims.get(p)}
+            <div class="pagebox v" data-vpage={p}>
+              <img
+                class="vimg"
+                {src}
+                data-vpage={p}
+                alt={`Halaman ${p}`}
+                loading="lazy"
+                draggable="false"
+                referrerpolicy="no-referrer"
+                onerror={() => markMiss(p)}
+                onload={(e) => {
+                  const el = e.currentTarget as HTMLImageElement;
+                  markSeen(p, el.naturalWidth, el.naturalHeight);
+                }}
+              />
+              {#if tl && d}
+                <TranslationOverlay
+                  bubbles={tl.bubbles}
+                  imgW={d.w}
+                  imgH={d.h}
+                />
+              {:else}
+                {@const ol = outlineFor(p)}
+                {#if ol}
+                  <BubbleOutline
+                    boxes={ol.boxes}
+                    imgW={ol.d.w}
+                    imgH={ol.d.h}
+                  />
+                {/if}
+              {/if}
+            </div>
           {/key}
         {/if}
       </figure>
@@ -306,46 +369,58 @@
 {/if}
 
 <style>
-  /* Paginated: isi penuh ruang kanvas (flex), bukan tebakan viewport.
-     Gambar seheight mungkin dalam ruang sisa — tanpa space kosong. */
+  /* Paginated: `.paged` murni SCROLLER (block, bukan flex-center).
+     Akar "atas kehalang + sisa tak ke-scroll": konten di-center di dalam
+     scroll container — browser tak bisa scroll ke area negatif center.
+     Center dipindah ke `.paged-center` (margin auto) yang tak ikut scroll. */
   .paged {
     flex: 1 1 auto;
     min-height: 0;
+    overflow: auto;
+    display: block;
+  }
+  .paged-center {
+    min-height: 100%;
+    width: fit-content;
+    max-width: 100%;
+    margin: auto;
     display: flex;
     flex-direction: column;
+    justify-content: center;
     align-items: center;
     gap: 8px;
   }
   .paged figure {
     margin: 0;
     width: 100%;
-    flex: 1 1 auto;
-    min-height: 0;
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start;
   }
+  /* Kontainer gambar relative: MENYUSUT ikut gambar (`inline-block`
+     + tinggi dari rasio), bukan selebar figure. Makanya overlay
+     `inset-0` pas menutup gambar — tanpa bar kosong, tanpa kompensasi
+     offset di JS. Rantai: figure (flex center) → pagebox (shrink) →
+     img contain asli. */
+  .pagebox {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+    max-width: 100%;
+  }
+  .pagebox.v {
+    display: block;
+    width: 100%;
+  }
+  /* Rasio dari template menjaga tinggi box = tinggi gambar persis
+     (lebar dibatasi ruang, tinggi = lebar/rasio) — overlay inset-0 pas. */
   .paged img.fit {
     display: block;
-    max-width: 100%;
-    max-height: 100%;
+    width: 100%;
     height: 100%;
-    width: auto;
     object-fit: contain;
     background: #000;
     border-radius: 2px;
-  }
-  .paged-nav {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .pos {
-    font-family: "Bangers", system-ui, sans-serif;
-    font-size: 15px;
-    letter-spacing: 0.08em;
-    color: var(--muted-foreground);
   }
   /* Vertikal: tiap gambar FIT LEBAR kolom penuh (width:100%), tinggi
      alami mengikuti rasio — kolom rapat tanpa celah. Akar "space di

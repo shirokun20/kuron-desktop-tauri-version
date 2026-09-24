@@ -9,12 +9,18 @@ pub enum AppError {
     Network(String),
     Storage(String),
     Internal(String),
+    /// 429 provider AI — UI cooldown + tawarkan fallback (7.2).
+    RateLimited(String),
 }
 
 impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Validation(m) | Self::Network(m) | Self::Storage(m) | Self::Internal(m) => {
+            Self::Validation(m)
+            | Self::Network(m)
+            | Self::Storage(m)
+            | Self::Internal(m)
+            | Self::RateLimited(m) => {
                 write!(f, "{m}")
             }
         }

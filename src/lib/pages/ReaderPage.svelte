@@ -3,10 +3,14 @@
   // Render 3-mode via ReaderCanvas (7.1); overlay translate + draw tetap 7.2/7.3.
   // Perekaman ala mobile: buka = halaman 1, pindah halaman throttle 2 dtk.
   import { convertFileSrc } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
   import { api } from "../api/client";
+  import { isTauriRuntime } from "../api/platform";
   import type { Chapter, Content, PageImageResult } from "../domain/types";
   import { libraryStore } from "../stores/library.svelte";
   import { settingsStore } from "../stores/settings.svelte";
+  import { translateStore } from "../stores/translate.svelte";
+  import { aiProvidersStore } from "../stores/aiProviders.svelte";
   import ReaderCanvas from "../components/ReaderCanvas.svelte";
   import { defaultMode } from "../utils/readerLayout";
   import type { ReaderMode } from "../stores/settingsPersist";
@@ -28,6 +32,8 @@
   } = $props();
 
   let pages = $state<string[]>([]);
+  /** Nilai mentah backend per halaman (URL remote / path lokal) — untuk translate. */
+  let rawPages = $state<string[]>([]);
   let current = $state(1);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -35,6 +41,57 @@
   let failed = $state(new Set<number>());
   let lastRecord = 0;
   let rootEl: HTMLElement | null = $state(null);
+
+  onMount(() => {
+    translateStore.startListening();
+    if (isTauriRuntime()) void aiProvidersStore.load();
+    return () => translateStore.stopListening();
+  });
+
+  /** Deteksi bubble halaman kini (tombol 🛰, manual ala draw-mode).
+   *  Sekali per halaman; gagal = banner error, baca tetap normal. */
+  function detectCurrent() {
+    const p = current;
+    const url = rawPages[p - 1];
+    if (!url || translateStore.detecting.has(p)) return;
+    void translateStore.detectPage(url, source, p);
+  }
+
+  /** Terjemahkan halaman kini (toolbar ✨). Backend ambil bytes sendiri. */
+  async function translateCurrent() {
+    const p = current;
+    const url = rawPages[p - 1];
+    if (!url || translateStore.busy) return;
+    try {
+      await translateStore.translatePage({
+        pageUrl: url,
+        sourceId: source,
+        contentId: content.id,
+        pageIndex: p - 1,
+        rtl,
+        page: p,
+      });
+    } catch {
+      // stage + error sudah di store; banner di bawah header menampilkannya
+    }
+  }
+
+  function tlBanner(): string | null {
+    if (translateStore.stage === "no-provider")
+      return "Belum ada provider AI — tambah kunci di Pengaturan → AI · Terjemahan.";
+    if (translateStore.stage === "rate-limited")
+      return "Provider rate-limited (429) — tunggu ±60 dtk atau ganti model.";
+    if (translateStore.stage === "error" && translateStore.error)
+      return `Terjemahan gagal: ${translateStore.error}`;
+    // Error deteksi manual (bukan dari stage translate): tampilkan juga.
+    if (
+      !translateStore.busy &&
+      !translateStore.resultFor(current) &&
+      translateStore.error
+    )
+      return `Deteksi gagal: ${translateStore.error}`;
+    return null;
+  }
   /** Pilihan user terakhir — langsung persist ke Pengaturan (storage). */
   let mode: ReaderMode = $derived(
     defaultMode(settingsStore.s.readerMode),
@@ -44,6 +101,8 @@
     settingsStore.patch({ readerMode: m });
   }
   let rtl = $derived(settingsStore.s.readerRightToLeft);
+  /** Jumlah bubble terdeteksi halaman kini (badge tombol ✨). */
+  let nBox = $derived(translateStore.boxesFor(current).length);
   // Bab internal berurutan (eksternal dibuka di browser, bukan di sini).
   let readable = $derived(siblings.filter((c) => !c.is_external));
   let atIndex = $derived(readable.findIndex((c) => c.id === chapter.id));
@@ -118,9 +177,11 @@
     loading = true;
     error = null;
     pages = [];
+    rawPages = [];
     failed = new Set();
     current = 1;
     lastRecord = 0;
+    translateStore.resetPage();
     scrollTop();
     let cancelled = false;
     // Backend: kirim `external_url` penuh bila ada (komentar impl).
@@ -128,6 +189,8 @@
       .pageImages(ch.external_url ?? ch.id, src)
       .then((res) => {
         if (cancelled) return;
+        // Mentah untuk translate (path lokal / URL); tampil via srcOf.
+        rawPages = res.map((p) => p.value);
         pages = res.map(srcOf);
         if (pages.length > 0) {
           lastRecord = Date.now();
@@ -184,19 +247,83 @@
       <button
         class="ghost nav"
         disabled={!prev}
-        title={prev ? `Sebelumnya: ${prev.title}` : "Bab pertama"}
+        title={prev ? `Bab sebelumnya: ${prev.title}` : "Bab pertama"}
+        aria-label={prev ? `Bab sebelumnya: ${prev.title}` : "Bab pertama"}
         onclick={() => prev && goChapter(prev)}
       >
-        ‹
+        «
       </button>
       <button
         class="ghost nav"
         disabled={!next}
-        title={next ? `Berikutnya: ${next.title}` : "Bab terakhir"}
+        title={next ? `Bab berikutnya: ${next.title}` : "Bab terakhir"}
+        aria-label={next ? `Bab berikutnya: ${next.title}` : "Bab terakhir"}
         onclick={() => next && goChapter(next)}
       >
-        ›
+        »
       </button>
+    </div>
+    <div class="aibar" role="group" aria-label="Terjemahan AI">
+      <button
+        type="button"
+        class="ghost ai"
+        class:on={nBox > 0}
+        disabled={translateStore.detecting.has(current) || pages.length === 0}
+        title={nBox > 0
+          ? `${nBox} bubble terdeteksi — klik ✨ untuk terjemahkan`
+          : "Deteksi bubble halaman ini"}
+        onclick={detectCurrent}
+      >
+        {#if translateStore.detecting.has(current)}
+          <span class="spin" aria-hidden="true"></span>
+        {:else}
+          🛰{nBox > 0 ? nBox : ""}
+        {/if}
+      </button>
+      <button
+        type="button"
+        class="ghost ai"
+        class:on={translateStore.overlayVisible &&
+          !!translateStore.resultFor(current)}
+        disabled={translateStore.busy || pages.length === 0}
+        title={translateStore.resultFor(current)
+          ? "Tampilkan/sembunyikan terjemahan"
+          : nBox > 0
+            ? `Terjemahkan ${nBox} bubble halaman ini`
+            : "Terjemahkan halaman ini"}
+        onclick={() => {
+          if (translateStore.resultFor(current)) translateStore.toggleOverlay();
+          else void translateCurrent();
+        }}
+      >
+        {#if translateStore.busy}
+          <span class="spin" aria-hidden="true"></span>
+        {:else}
+          ✨{nBox > 0 && !translateStore.resultFor(current) ? nBox : ""}
+        {/if}
+      </button>
+      {#if translateStore.resultFor(current)}
+        <button
+          type="button"
+          class="ghost ai clear"
+          title="Hapus terjemahan halaman ini"
+          onclick={() => translateStore.clearResult(current)}
+        >
+          🗑
+        </button>
+      {/if}
+      {#if nBox > 0}
+        <!-- Bersihkan outline biru halaman ini (deteksi ulang bila perlu). -->
+        <button
+          type="button"
+          class="ghost ai clear"
+          title={`Bersihkan ${nBox} bubble halaman ini`}
+          aria-label={`Bersihkan ${nBox} bubble halaman ${current}`}
+          onclick={() => translateStore.clearDetected(current)}
+        >
+          🧹
+        </button>
+      {/if}
     </div>
     {#if pages.length > 0}
       <span class="badge">{current} / {pages.length}</span>
@@ -214,6 +341,13 @@
   {#if error}
     <p class="err">{error}</p>
   {/if}
+  {#if tlBanner()}
+    <p class="tl-banner" role="status">{tlBanner()}</p>
+  {:else if translateStore.stage === "detecting"}
+    <p class="tl-banner busy" role="status">Mendeteksi bubble…</p>
+  {:else if translateStore.stage === "translating"}
+    <p class="tl-banner busy" role="status">Menerjemahkan halaman {current}…</p>
+  {/if}
   {#if !loading && !error && pages.length === 0}
     <p class="muted center">Tidak ada halaman untuk bab ini.</p>
   {/if}
@@ -229,16 +363,59 @@
       onfail={markFailed}
       onretry={retryPage}
       onok={markOk}
+      translations={translateStore.results}
+      detected={translateStore.detected}
+      showTl={translateStore.overlayVisible}
     />
   </div>
 
   {#if !loading && pages.length > 0}
+    <!-- SATU baris sejajar: bab-kiri | halaman-tengah | bab-kanan.
+         Nav halaman di dalam footer permanen (bukan ikut scroll gambar)
+         agar tak hilang saat gambar besar. -->
     <footer class="reader-foot">
-      <button class="ghost" disabled={!prev} onclick={() => prev && goChapter(prev)}>
-        ← {prev ? prev.title : "Awal"}
+      <button
+        class="ghost chap"
+        disabled={!prev}
+        title={prev ? `Bab sebelumnya: ${prev.title}` : "Bab pertama"}
+        aria-label={prev ? `Bab sebelumnya: ${prev.title}` : "Bab pertama"}
+        onclick={() => prev && goChapter(prev)}
+      >
+        « <span class="kick">Bab</span>
+        <span class="blabel">{prev ? prev.title : "Awal"}</span>
       </button>
-      <button class="ghost" disabled={!next} onclick={() => next && goChapter(next)}>
-        {next ? next.title : "Akhir"} →
+      {#if mode === "paginated"}
+        <nav class="pagefoot" aria-label="Navigasi halaman">
+          <button
+            class="ghost"
+            disabled={current <= 1}
+            title={`Halaman sebelumnya (${Math.max(1, current - 1)} / ${pages.length})`}
+            aria-label={`Halaman sebelumnya (${Math.max(1, current - 1)} / ${pages.length})`}
+            onclick={() => trackPage(Math.max(1, current - 1))}
+          >
+            ‹ <span class="blabel">Sebelumnya</span>
+          </button>
+          <span class="pos">{current} / {pages.length}</span>
+          <button
+            class="ghost"
+            disabled={current >= pages.length}
+            title={`Halaman berikutnya (${Math.min(pages.length, current + 1)} / ${pages.length})`}
+            aria-label={`Halaman berikutnya (${Math.min(pages.length, current + 1)} / ${pages.length})`}
+            onclick={() => trackPage(Math.min(pages.length, current + 1))}
+          >
+            <span class="blabel">Berikutnya</span> ›
+          </button>
+        </nav>
+      {/if}
+      <button
+        class="ghost chap"
+        disabled={!next}
+        title={next ? `Bab berikutnya: ${next.title}` : "Bab terakhir"}
+        aria-label={next ? `Bab berikutnya: ${next.title}` : "Bab terakhir"}
+        onclick={() => next && goChapter(next)}
+      >
+        <span class="kick">Bab</span>
+        <span class="blabel">{next ? next.title : "Akhir"}</span> »
       </button>
     </footer>
   {/if}
@@ -372,6 +549,55 @@
     color: var(--primary-foreground);
     flex-shrink: 0;
   }
+  /* Toolbar translate AI (7.2): tombol ✨ + hapus hasil halaman. */
+  .aibar {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .ghost.ai {
+    font-size: 16px;
+    padding: 6px 11px 8px;
+  }
+  .ghost.ai.on {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .ghost.ai.clear {
+    border-color: var(--destructive);
+    color: var(--destructive);
+  }
+  .spin {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--muted-foreground);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: aispin 0.8s linear infinite;
+    vertical-align: -2px;
+  }
+  @keyframes aispin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .tl-banner {
+    flex-shrink: 0;
+    margin: 0 0 8px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    background: color-mix(in srgb, var(--destructive) 10%, transparent);
+    border: 1px solid var(--destructive);
+    color: var(--foreground);
+  }
+  .tl-banner.busy {
+    background: var(--card);
+    border-color: var(--border);
+    color: var(--muted-foreground);
+  }
   .progress {
     position: absolute;
     left: 0;
@@ -380,23 +606,69 @@
     background: var(--primary);
     transition: width 200ms ease;
   }
-  /* Footer menempel bingkai bawah app (bukan mengalir setelah konten)
-     + merge dengan tombol Awal/Akhir via space-between penuh. */
+  /* Footer SATU baris: Awal | nav-halaman tengah | Akhir.
+     Menempel bingkai bawah (bukan ikut scroll gambar). */
   .reader-foot {
     flex-shrink: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    row-gap: 6px;
+    flex-wrap: wrap;
     padding: 8px 0 2px;
     background: var(--kuron-reader-bg);
     border-top: 1px solid var(--border);
     margin-top: 8px;
+  }
+  .pagefoot {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .pagefoot .pos {
+    font-family: "Bangers", system-ui, sans-serif;
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    color: var(--muted-foreground);
+    flex-shrink: 0;
   }
   .reader-foot .ghost {
     max-width: 48%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* Kicker "Bab" di tombol bab — bedakan dari tombol halaman
+     (Sebelumnya/Berikutnya tanpa kicker). */
+  .ghost.chap .kick {
+    font-family: "Bangers", system-ui, sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--primary);
+    margin-right: 2px;
+  }
+  .ghost.chap:disabled .kick {
+    color: var(--muted-foreground);
+  }
+  /* Sempit: nav halaman turun di bawah + label panjang disembunyikan
+     (ikon panah + kicker Bab tetap sebagai penanda) — tak berdesakan. */
+  @media (max-width: 640px) {
+    .reader-foot {
+      justify-content: center;
+    }
+    .pagefoot {
+      order: 3;
+      flex-basis: 100%;
+    }
+    .reader-foot .ghost .blabel {
+      display: none;
+    }
+    .reader-foot .ghost {
+      max-width: none;
+    }
   }
 </style>

@@ -10,7 +10,7 @@ pub mod value_objects;
 
 pub use entities::{
     ai_provider::{AiModelOption, AiProvider, AiProviderInput, AiProviderKind},
-    ai_translation::{BubbleBox, PageTranslation},
+    ai_translation::{BubbleBox, PageTranslation, TranslatedBubble, TranslationStyle},
     chapter::Chapter,
     comment::Comment,
     content::Content,
@@ -105,14 +105,21 @@ mod roundtrip_tests {
     fn ai_glossary_filter_reader() {
         assert_roundtrip(&PageTranslation {
             page_index: 0,
-            bubbles: vec![BubbleBox {
+            bubbles: vec![TranslatedBubble {
                 x: 1.0,
                 y: 2.0,
                 w: 3.0,
                 h: 4.0,
-                translated: Some("halo".into()),
+                original: "こんにちは".into(),
+                reading: "konnichiwa".into(),
+                translated: "halo".into(),
+                shape: Some(vec![vec![1, 2], vec![4, 2], vec![4, 6], vec![1, 6]]),
+                needs_white_patch: false,
             }],
+            detected_lang: "ja".into(),
+            used_fallback: false,
         });
+        assert_roundtrip(&TranslationStyle::Genz);
         assert_roundtrip(&GlossaryEntry {
             source: "senpai".into(),
             target: "kakak kelas".into(),

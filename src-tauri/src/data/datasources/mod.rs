@@ -3,6 +3,7 @@
 //! `remote`: engine scraper/REST + adapter situs.
 
 pub mod ai_model_catalog;
+pub mod ai_translate;
 pub mod config;
 pub mod extension;
 pub mod local;

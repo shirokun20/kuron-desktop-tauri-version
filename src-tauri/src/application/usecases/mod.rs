@@ -19,3 +19,4 @@ pub mod say_hello;
 pub mod search_content;
 pub mod set_favorite;
 pub mod start_download;
+pub mod translate_page;

@@ -18,6 +18,8 @@ use crate::{
             },
         },
         http_fetcher_arc,
+        native::bubble_detector::BubbleDetector,
+        repositories::TranslationCacheRepositoryImpl,
         repositories::{
             AiProviderRepositoryImpl, ContentRepositoryImpl, DownloadsRepositoryImpl,
             LibraryRepositoryImpl, MockContentRepository,
@@ -44,6 +46,11 @@ pub struct AppState {
     pub image_cache: Arc<ImageCache>,
     /// Provider AI BYOK: metadata di KV, kunci di keychain OS (9.2).
     pub ai_providers: Arc<dyn AiProviderRepository>,
+    /// Detektor bubble ONNX YOLO-seg via `ort` CPU (5.2); model 42MB
+    /// diunduh sekali ke data-dir saat pertama dipakai, bukan dibundel.
+    pub bubble_detector: Arc<BubbleDetector>,
+    /// Cache hasil terjemahan per halaman (7.2, tabel `translation_cache`).
+    pub translation_cache: Arc<TranslationCacheRepositoryImpl>,
     pub http: HttpClientManager,
     /// Dir config ekstensi ter-install (`{data}/extensions`).
     pub ext_dir: PathBuf,
@@ -77,6 +84,14 @@ fn default_cache_path() -> PathBuf {
         .unwrap_or_else(std::env::temp_dir)
         .join("id.nhasix.kuron")
         .join("images")
+}
+
+fn default_model_path() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("id.nhasix.kuron")
+        .join("models")
+        .join("bubble_detector.onnx")
 }
 
 /// Buka repo SQLite dengan fallback memori (pola library, 8.1).
@@ -139,6 +154,11 @@ impl AppState {
             download_manager,
             image_cache,
             ai_providers,
+            bubble_detector: Arc::new(BubbleDetector::new(default_model_path())),
+            translation_cache: Arc::new(
+                TranslationCacheRepositoryImpl::open(&default_db_path())
+                    .expect("translation cache init"),
+            ),
             http,
             ext_dir,
             cursors: PaginationCursors::default(),
@@ -449,6 +469,8 @@ mod tests {
                 KvStoreDs::open(&dir.join("kv.json")).unwrap(),
                 SecretStore::new_memory(),
             )),
+            bubble_detector: Arc::new(BubbleDetector::new(dir.join("bubble_detector.onnx"))),
+            translation_cache: Arc::new(TranslationCacheRepositoryImpl::open_in_memory().unwrap()),
             http,
             ext_dir: dir.to_path_buf(),
             cursors: PaginationCursors::default(),

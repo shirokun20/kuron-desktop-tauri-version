@@ -14,6 +14,7 @@ use crate::{
         AiModelOption, AiProvider, AiProviderInput, AiProviderKind, BubbleBox, Chapter, Comment,
         Content, DownloadState, DownloadTask, GlossaryEntry, Hello, HistoryItem, Language,
         PageImageResult, PageTranslation, ReaderSettings, ReadingMode, SearchFilter, SourceId, Tag,
+        TranslatedBubble, TranslationStyle,
     },
 };
 
@@ -33,6 +34,8 @@ fn export_types_ts() {
         DownloadState::decl(&cfg),
         BubbleBox::decl(&cfg),
         PageTranslation::decl(&cfg),
+        TranslatedBubble::decl(&cfg),
+        TranslationStyle::decl(&cfg),
         GlossaryEntry::decl(&cfg),
         SourceId::decl(&cfg),
         Language::decl(&cfg),

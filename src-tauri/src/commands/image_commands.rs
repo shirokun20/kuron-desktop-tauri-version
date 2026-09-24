@@ -6,7 +6,10 @@
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 
+use crate::core::AppState;
+use crate::data::native::bubble_detector::post_process_boxes;
 use crate::data::native::image_ops;
+use crate::domain::BubbleBox;
 
 fn blocking<F, T>(f: F) -> impl std::future::Future<Output = Result<T, String>>
 where
@@ -64,4 +67,47 @@ pub async fn cmd_image_compress_page(data: String, max_dim: u32) -> Result<Strin
     let raw = decode_b64(&data)?;
     let out = blocking(move || image_ops::compress_page(&raw, max_dim)).await?;
     Ok(encode_b64(&out))
+}
+
+/// Status model bubble: sudah terunduh atau belum + path lokal.
+/// Model 42MB diunduh sekali (bukan bundel); deteksi tanpa model = error jelas.
+#[tauri::command]
+pub fn cmd_bubble_model_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let det = state.bubble_detector.clone();
+    Ok(serde_json::json!({
+        "ready": det.model_path().exists(),
+        "path": det.model_path().to_string_lossy(),
+    }))
+}
+
+/// Deteksi bubble manga (YOLO-seg `ort` CPU + NMS 0.45, port `BubbleDetector.kt`).
+/// Backend yang mengambil bytes (`page_url` remote via HTTP + header sumber,
+/// lokal via baca file) — FE cukup kirim URL, tanpa fetch ganda (hindari
+/// CORS WebView) dan tanpa payload base64 raksasa di IPC.
+/// Model diunduh otomatis saat pertama dipakai; inferensi via `spawn_blocking`.
+#[tauri::command]
+pub async fn cmd_detect_bubbles(
+    state: tauri::State<'_, AppState>,
+    page_url: String,
+    source_id: String,
+) -> Result<Vec<BubbleBox>, String> {
+    let raw = if page_url.starts_with("http://") || page_url.starts_with("https://") {
+        state
+            .http
+            .get_bytes(&page_url, &source_id, None)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        std::fs::read(&page_url).map_err(|e| format!("baca file halaman: {e}"))?
+    };
+    let det = state.bubble_detector.clone();
+    let http = state.http.clone();
+    blocking(move || {
+        tauri::async_runtime::block_on(det.ensure_model(&http))?;
+        let boxes = det.detect(&raw)?;
+        Ok(post_process_boxes(boxes))
+    })
+    .await
 }

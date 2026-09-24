@@ -6,6 +6,7 @@ import type {
   AiProviderInput,
   AiProviderKind,
   AppInfo,
+  BubbleBox,
   Chapter,
   Comment,
   Content,
@@ -15,6 +16,8 @@ import type {
   HistoryItem,
   InstalledSource,
   PageImageResult,
+  PageTranslation,
+  TranslationStyle,
   ZipPreview,
 } from "../domain/types";
 
@@ -80,6 +83,30 @@ export const api = {
     call("cmd_image_build_mosaic", { data, boxes }),
   imageCompressPage: (data: string, maxDim: number): Promise<string> =>
     call("cmd_image_compress_page", { data, maxDim }),
+  // Bubble detector (5.2): YOLO-seg ort CPU + NMS 0.45; model 42MB unduh sekali.
+  bubbleModelStatus: (): Promise<{ ready: boolean; path: string }> =>
+    call("cmd_bubble_model_status"),
+  // Deteksi bubble saja (outline biru ala draw-mode Detect): backend
+  // ambil bytes sendiri; tanpa fetch ganda / base64 raksasa.
+  // snake_case 1:1 param Rust (pola translatePage).
+  detectBubbles: (pageUrl: string, sourceId: string): Promise<BubbleBox[]> =>
+    call("cmd_detect_bubbles", { pageUrl, sourceId }),
+  // Translate halaman (7.2): backend ambil bytes sendiri (remote/local),
+  // detect→mosaic→AI BYOK→cache; progress `ai:progress`.
+  // snake_case 1:1 struct Rust (pola `cmd_search`/`cmd_ai_provider_save`).
+  translatePage: (args: {
+    page_url: string;
+    source_id: string;
+    content_id: string;
+    page_index: number;
+    crop_y_top?: number | null;
+    rtl?: boolean | null;
+    style?: TranslationStyle | null;
+    skip_sfx?: boolean | null;
+    target_lang?: string | null;
+    pre_detected?: BubbleBox[] | null;
+    manual?: BubbleBox[] | null;
+  }): Promise<PageTranslation> => call("cmd_translate_page", { args }),
   related: (contentId: string, source?: string): Promise<Content[]> =>
     call("cmd_get_related", { contentId, source: source ?? null }),
   comments: (contentId: string, source?: string): Promise<Comment[]> =>

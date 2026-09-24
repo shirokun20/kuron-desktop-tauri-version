@@ -59,9 +59,54 @@ source_id: string, state: DownloadState, };
 
 export type DownloadState = "Queued" | { "Downloading": { page: number, total: number, } } | "Paused" | "Completed" | { "Failed": string };
 
-export type BubbleBox = { x: number, y: number, w: number, h: number, translated: string | null, };
+export type BubbleBox = { x: number, y: number, w: number, h: number,
+/**
+ * Skor deteksi ONNX 0..1 (1.0 = manual, port `BubbleBox.confidence`).
+ */
+confidence: number,
+/**
+ * Outline poligon [[x,y],...] koordinat piksel asli; None = box fallback.
+ */
+shape: Array<Array<number>> | null,
+/**
+ * Kelas: "balloon" | "text" | "frame" | "unknown".
+ */
+kind: string | null,
+/**
+ * Ekor gambar-user [[x,y],...]; dipakai draw mode 7.3 (manual bubble).
+ */
+tail: Array<Array<number>> | null, translated: string | null, };
 
-export type PageTranslation = { page_index: number, bubbles: Array<BubbleBox>, };
+export type PageTranslation = { page_index: number, bubbles: Array<TranslatedBubble>,
+/**
+ * Bahasa terdeteksi (mis. "ja"); kosong bila tak diketahui.
+ */
+detected_lang: string,
+/**
+ * True bila jalur full-image (tanpa bubble detector).
+ */
+used_fallback: boolean, };
+
+export type TranslatedBubble = { x: number, y: number, w: number, h: number,
+/**
+ * Teks asli di bubble (untuk belajar/glosarium); kosong bila tak ada.
+ */
+original: string,
+/**
+ * Bacaan latin (romaji/romanisasi); kosong bila asli sudah latin.
+ */
+reading: string, translated: string,
+/**
+ * Poligon outline [[x,y],...]; None = fallback box.
+ */
+shape: Array<Array<number>> | null,
+/**
+ * Teks di atas artwork ramai — render patch putih di belakang teks
+ * (heuristik "bubble flat" cypy, dihitung pasca-AI).
+ */
+needs_white_patch: boolean, };
+
+export type TranslationStyle = "natural" | "genz" | "action" | "romantis" | "formal" | "kasar" | "literal";
 
 export type GlossaryEntry = { source: string, target: string, };
 

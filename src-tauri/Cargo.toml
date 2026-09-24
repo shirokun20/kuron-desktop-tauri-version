@@ -18,10 +18,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [features]
+# Default = ort ON: deteksi bubble jalan langsung di `pnpm dev`
+# (biner prebuilt ONNX Runtime diunduh saat build + model 42MB saat
+# pertama pakai). Matikan via `--no-default-features` bila mau build hemat.
+default = ["ort"]
 # Suite live opt-in (internet + keychain OS + situs nyata).
 # `cargo test` default = 100% deterministik offline, 0 failed 0 ignored.
 # Verifikasi live manual: `cargo test --features live-tests`.
 live-tests = []
+# Deteksi bubble ONNX via `ort` CPU (5.2).
+ort = ["dep:ort", "dep:ndarray"]
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -35,7 +41,7 @@ async-trait = "0.1.92"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 keyring = "4.2.0"
 scraper = "0.27.0"
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "cookies", "charset", "system-proxy"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "cookies", "charset", "system-proxy", "json"] }
 serde_json_path = "0.7.2"
 tokio = { version = "1.53.1", features = ["rt", "time", "macros"] }
 sha2 = "0.11.0"
@@ -45,6 +51,8 @@ regex = "1.13.1"
 tauri-plugin-dialog = "2.7.3"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 base64 = "0.22"
+ndarray = { version = "0.16", optional = true }
+ort = { version = "=2.0.0-rc.10", optional = true, default-features = false, features = ["std", "ndarray", "download-binaries"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
