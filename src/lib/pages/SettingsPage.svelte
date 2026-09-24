@@ -15,8 +15,7 @@
 
   const READER_MODES: { id: ReaderMode; label: string }[] = [
     { id: "paginated", label: "Per halaman" },
-    { id: "continuous", label: "Gulir terus" },
-    { id: "webtoon", label: "Webtoon" },
+    { id: "vertical", label: "Gulir atas-bawah" },
   ];
 
   const AI_KINDS: { id: AiProviderKind; label: string }[] = [
@@ -234,8 +233,9 @@
       <div class="txt">
         <strong>Mode baca</strong>
         <p class="hint">
-          Preferensi disimpan untuk reader. Reader kini selalu gulir
-          terus-menerus; pilihan lain aktif setelah ReaderCanvas (tugas 7.1).
+          Mode awal reader tiap bab dibuka; tersimpan otomatis saat diganti
+          lewat switcher header. Gambar tinggi (webtoon) tetap scroll
+          vertikal alami — tanpa potongan backend.
         </p>
       </div>
       <div class="seg" role="group" aria-label="Mode baca">
@@ -255,8 +255,7 @@
       <div class="txt">
         <strong>Kanan ke kiri</strong>
         <p class="hint">
-          Arah baca manga RTL. Disimpan kini; diterapkan penuh oleh ReaderCanvas
-          (tugas 7.1).
+          Arah baca manga RTL. Berlaku untuk navigasi mode per-halaman.
         </p>
       </div>
       <button

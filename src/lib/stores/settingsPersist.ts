@@ -1,7 +1,10 @@
 // Preferensi pengaturan aplikasi — `localStorage` (`kuron.settings`),
 // pola `filterPersist` (modul murni, testable, storage disuntik).
 // Spec: `settings-ai` — seksi tampilan/pembaca/jaringan/data; blur default-on.
-export type ReaderMode = "paginated" | "continuous" | "webtoon";
+// Mode baca: paginated (1 halaman, tombol/keyboard) | vertical
+// (scroll atas-bawah; gambar tinggi = scroll panjang alami).
+// Nilai lama dimigrasi via defaultMode.
+export type ReaderMode = "paginated" | "vertical";
 
 export interface AppSettings {
   /** Kaburkan cover demi privasi — default ON (ala mobile). */
@@ -19,15 +22,11 @@ export const SETTINGS_KEY = "kuron.settings";
 export const DEFAULT_SETTINGS: AppSettings = {
   blurThumbnail: true,
   autoLoadFeed: true,
-  readerMode: "continuous",
+  readerMode: "vertical",
   readerRightToLeft: false,
 };
 
-const READER_MODES: readonly ReaderMode[] = [
-  "paginated",
-  "continuous",
-  "webtoon",
-];
+const READER_MODES: readonly ReaderMode[] = ["paginated", "vertical"];
 
 type MiniStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -45,11 +44,18 @@ export function normalizeSettings(raw: unknown): AppSettings {
   if (typeof o.readerRightToLeft === "boolean") {
     out.readerRightToLeft = o.readerRightToLeft;
   }
-  if (
-    typeof o.readerMode === "string" &&
-    (READER_MODES as readonly string[]).includes(o.readerMode)
-  ) {
-    out.readerMode = o.readerMode as ReaderMode;
+  if (typeof o.readerMode === "string") {
+    // Migrasi nilai lama → 2 mode (tanpa impor readerLayout: hindari siklus).
+    const migrated =
+      o.readerMode === "continuous" ||
+      o.readerMode === "webtoon" ||
+      o.readerMode === "horizontal" ||
+      o.readerMode === "spread"
+        ? "vertical"
+        : o.readerMode;
+    if ((READER_MODES as readonly string[]).includes(migrated)) {
+      out.readerMode = migrated as ReaderMode;
+    }
   }
   return out;
 }

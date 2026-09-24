@@ -1,11 +1,15 @@
 <script lang="ts">
-  // ReaderPage v0 — ruang baca tinta: progres + bab sebelum/berikutnya.
-  // Canvas 3-mode + virtual scroller + overlay tetap Fase 5 (7.x).
+  // ReaderPage — ruang baca tinta: progres + bab sebelum/berikutnya.
+  // Render 3-mode via ReaderCanvas (7.1); overlay translate + draw tetap 7.2/7.3.
   // Perekaman ala mobile: buka = halaman 1, pindah halaman throttle 2 dtk.
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { api } from "../api/client";
   import type { Chapter, Content, PageImageResult } from "../domain/types";
   import { libraryStore } from "../stores/library.svelte";
+  import { settingsStore } from "../stores/settings.svelte";
+  import ReaderCanvas from "../components/ReaderCanvas.svelte";
+  import { defaultMode } from "../utils/readerLayout";
+  import type { ReaderMode } from "../stores/settingsPersist";
 
   let {
     content,
@@ -30,8 +34,16 @@
   /** Halaman yang gagal dimuat (1-based) — tiap tile bawa tombol reload. */
   let failed = $state(new Set<number>());
   let lastRecord = 0;
-  let listEl: HTMLElement | null = $state(null);
   let rootEl: HTMLElement | null = $state(null);
+  /** Pilihan user terakhir — langsung persist ke Pengaturan (storage). */
+  let mode: ReaderMode = $derived(
+    defaultMode(settingsStore.s.readerMode),
+  );
+
+  function pickMode(m: ReaderMode) {
+    settingsStore.patch({ readerMode: m });
+  }
+  let rtl = $derived(settingsStore.s.readerRightToLeft);
   // Bab internal berurutan (eksternal dibuka di browser, bukan di sini).
   let readable = $derived(siblings.filter((c) => !c.is_external));
   let atIndex = $derived(readable.findIndex((c) => c.id === chapter.id));
@@ -66,13 +78,38 @@
     onchapter(ch);
   }
 
-  /** Route khusus = scroller milik sendiri: atas tiap ganti bab. */
+  /** Route khusus = scroller milik sendiri: atas tiap ganti bab.
+      Vertical: scroll milik `.canvas-wrap`; paged: tak perlu scroll. */
   function scrollTop() {
-    rootEl?.scrollTo({ top: 0 });
+    rootEl?.querySelector(".canvas-wrap")?.scrollTo({ top: 0 });
   }
 
   function retryFailed() {
     failed = new Set();
+  }
+
+  function retryPage(p: number) {
+    failed.delete(p);
+    failed = new Set(failed);
+  }
+
+  function markFailed(p: number) {
+    failed.add(p);
+    failed = new Set(failed);
+  }
+
+  /** Gambar sukses tampil → bersihkan flag gagal sesaat (pulih otomatis). */
+  function markOk(p: number) {
+    if (failed.has(p)) {
+      failed.delete(p);
+      failed = new Set(failed);
+    }
+  }
+
+  function trackPage(p: number) {
+    if (p === current) return;
+    current = p;
+    recordThrottled(p);
   }
 
   $effect(() => {
@@ -108,26 +145,7 @@
     };
   });
 
-  // Mata-mata halaman: gambar di tengah viewport = posisi baca.
-  $effect(() => {
-    if (!listEl || pages.length === 0) return;
-    const imgs = listEl.querySelectorAll("img[data-page]");
-    const spy = new IntersectionObserver(
-      (entries) => {
-        for (const en of entries) {
-          if (!en.isIntersecting) continue;
-          const page = Number((en.target as HTMLElement).dataset.page);
-          if (Number.isInteger(page) && page !== current) {
-            current = page;
-            recordThrottled(page);
-          }
-        }
-      },
-      { root: null, rootMargin: "-45% 0px -45% 0px", threshold: 0 },
-    );
-    imgs.forEach((img) => spy.observe(img));
-    return () => spy.disconnect();
-  });
+  // Mata-mata halaman kini di dalam ReaderCanvas (lapor via onpage).
 </script>
 
 <section class="reader" bind:this={rootEl}>
@@ -142,6 +160,26 @@
         ⟳ {failed.size} gagal
       </button>
     {/if}
+    <div class="modeseg" role="group" aria-label="Mode baca">
+      <button
+        type="button"
+        class:on={mode === "paginated"}
+        aria-pressed={mode === "paginated"}
+        title="Per halaman (tombol/keyboard)"
+        onclick={() => pickMode("paginated")}
+      >
+        ▦
+      </button>
+      <button
+        type="button"
+        class:on={mode === "vertical"}
+        aria-pressed={mode === "vertical"}
+        title="Gulir atas-bawah (gambar tinggi = scroll panjang alami)"
+        onclick={() => pickMode("vertical")}
+      >
+        ≣
+      </button>
+    </div>
     <div class="chapnav">
       <button
         class="ghost nav"
@@ -180,40 +218,18 @@
     <p class="muted center">Tidak ada halaman untuk bab ini.</p>
   {/if}
 
-  <div class="pages" bind:this={listEl}>
-    {#each pages as src, i (i)}
-      <figure>
-        {#if failed.has(i + 1)}
-          <div class="page-fail" data-page={i + 1}>
-            <span class="fail-num">{i + 1}</span>
-            <p>Gagal muat halaman ini.</p>
-            <button
-              class="ghost"
-              onclick={() => {
-                failed.delete(i + 1);
-                failed = new Set(failed);
-              }}
-            >
-              ⟳ Muat ulang
-            </button>
-          </div>
-        {:else}
-          <img
-            src={src}
-            data-page={i + 1}
-            alt={`Halaman ${i + 1}`}
-            loading="lazy"
-            draggable="false"
-            referrerpolicy="no-referrer"
-            onerror={() => {
-              failed.add(i + 1);
-              failed = new Set(failed);
-            }}
-          />
-        {/if}
-        <figcaption>{i + 1}</figcaption>
-      </figure>
-    {/each}
+  <div class="canvas-wrap" class:scroll={mode === "vertical"}>
+    <ReaderCanvas
+      {pages}
+      {mode}
+      {rtl}
+      {current}
+      {failed}
+      onpage={trackPage}
+      onfail={markFailed}
+      onretry={retryPage}
+      onok={markOk}
+    />
   </div>
 
   {#if !loading && pages.length > 0}
@@ -229,11 +245,30 @@
 </section>
 
 <style>
+  /* Shell flex penuh: header + kanvas + footer menempel bingkai bawah.
+     AKAR "space antara tombol prev/next dengan frame": footer mengalir
+     setelah konten (bukan sticky) + kanvas menebak tinggi viewport
+     (`100dvh−300px`), sehingga ada ruang kosong di bawah gambar. */
   .reader {
     background: var(--kuron-reader-bg);
-    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0 20px 10px;
+  }
+  .canvas-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* Mode vertical: kanvas ikut scroll shell (satu scroll saja, mulus). */
+  .canvas-wrap.scroll {
     overflow-y: auto;
-    padding: 0 20px 24px;
+    display: block;
+    scroll-behavior: smooth;
   }
   .muted {
     color: var(--muted-foreground);
@@ -245,10 +280,11 @@
     color: var(--destructive);
   }
   .reader-head {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 0 -20px 18px;
+    margin: 0 -20px 10px;
     padding: 10px 20px;
     position: sticky;
     top: 0;
@@ -303,30 +339,28 @@
     font-size: 12px;
     padding: 6px 12px;
   }
-  .page-fail {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    min-height: 280px;
-    border: 1px dashed var(--destructive);
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--destructive) 7%, transparent);
-    padding: 28px 16px;
-    text-align: center;
+  .modeseg {
+    flex-shrink: 0;
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--card);
   }
-  .page-fail p {
-    margin: 0;
-    font-size: 13px;
+  .modeseg button {
+    border: 0;
+    background: transparent;
     color: var(--muted-foreground);
+    font-size: 15px;
+    padding: 6px 11px;
+    cursor: pointer;
   }
-  .fail-num {
-    font-family: "Bangers", system-ui, sans-serif;
-    font-size: 44px;
-    line-height: 1;
-    color: var(--destructive);
-    opacity: 0.7;
+  .modeseg button + button {
+    border-left: 1px solid var(--border);
+  }
+  .modeseg button.on {
+    background: var(--primary);
+    color: var(--primary-foreground);
   }
   .badge {
     font-family: "Bangers", system-ui, sans-serif;
@@ -346,39 +380,18 @@
     background: var(--primary);
     transition: width 200ms ease;
   }
-  .pages {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
-  }
-  .pages figure {
-    margin: 0;
-    width: 100%;
-    max-width: 800px;
-  }
-  .pages img {
-    display: block;
-    width: 100%;
-    height: auto;
-    border-radius: 4px;
-    background: var(--muted);
-    border: 1px solid var(--border);
-  }
-  .pages figcaption {
-    margin-top: 4px;
-    text-align: center;
-    font-family: "Bangers", system-ui, sans-serif;
-    font-size: 14px;
-    letter-spacing: 0.1em;
-    color: var(--muted-foreground);
-  }
+  /* Footer menempel bingkai bawah app (bukan mengalir setelah konten)
+     + merge dengan tombol Awal/Akhir via space-between penuh. */
   .reader-foot {
+    flex-shrink: 0;
     display: flex;
     justify-content: space-between;
+    align-items: center;
     gap: 12px;
-    max-width: 800px;
-    margin: 20px auto 0;
+    padding: 8px 0 2px;
+    background: var(--kuron-reader-bg);
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
   }
   .reader-foot .ghost {
     max-width: 48%;

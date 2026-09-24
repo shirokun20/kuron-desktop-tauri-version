@@ -23,12 +23,12 @@ function memStorage(seed?: Record<string, string>): MiniStorage {
 }
 
 describe("settingsPersist", () => {
-  it("default: blur thumbnail ON, auto-load ON, reader continuous", () => {
+  it("default: blur thumbnail ON, auto-load ON, reader vertical", () => {
     const s = memStorage();
     const d = loadSettings(s);
     assert.equal(d.blurThumbnail, true);
     assert.equal(d.autoLoadFeed, true);
-    assert.equal(d.readerMode, "continuous");
+    assert.equal(d.readerMode, "vertical");
     assert.equal(d.readerRightToLeft, false);
     assert.deepEqual(d, DEFAULT_SETTINGS);
   });
@@ -41,7 +41,7 @@ describe("settingsPersist", () => {
     assert.equal(d.readerRightToLeft, true);
     // Field tak disentuh tetap default.
     assert.equal(d.autoLoadFeed, true);
-    assert.equal(d.readerMode, "continuous");
+    assert.equal(d.readerMode, "vertical");
     // Kunci persis spec settings-ai.
     assert.ok(s.getItem(SETTINGS_KEY));
   });
@@ -58,7 +58,7 @@ describe("settingsPersist", () => {
     const d = loadSettings(s);
     assert.equal(d.blurThumbnail, true); // tipe salah → default ON
     assert.equal(d.autoLoadFeed, false); // boolean valid dipertahankan
-    assert.equal(d.readerMode, "continuous"); // enum asing → default
+    assert.equal(d.readerMode, "vertical"); // enum asing → default
     assert.equal("extra" in d, false); // key asing tak tembus
   });
 
@@ -82,8 +82,17 @@ describe("settingsPersist", () => {
       typeof saveSettings
     >[0];
     const d = saveSettings(bad, s);
-    assert.equal(d.readerMode, "continuous");
-    assert.equal(loadSettings(s).readerMode, "continuous");
+    assert.equal(d.readerMode, "vertical");
+    assert.equal(loadSettings(s).readerMode, "vertical");
+  });
+
+  it("nilai lama continuous/webtoon/spread/horizontal migrasi ke vertical", () => {
+    for (const old of ["continuous", "webtoon", "spread", "horizontal"]) {
+      const d = loadSettings(
+        memStorage({ [SETTINGS_KEY]: JSON.stringify({ readerMode: old }) }),
+      );
+      assert.equal(d.readerMode, "vertical");
+    }
   });
 
   it("tanpa storage = default + save tetap balik nilai utuh", () => {
