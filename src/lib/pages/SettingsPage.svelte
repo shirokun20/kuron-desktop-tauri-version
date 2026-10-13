@@ -13,6 +13,7 @@
   import type { AiModelOption, AiProviderKind } from "../domain/types";
   import { tagColor } from "../theme/tokens";
 
+  import { SHOW_AI } from "../config/features";
   const READER_MODES: { id: ReaderMode; label: string }[] = [
     { id: "paginated", label: "Per halaman" },
     { id: "vertical", label: "Gulir atas-bawah" },
@@ -55,7 +56,7 @@
   let aiManualModel = $state(false);
 
   $effect(() => {
-    void aiProvidersStore.load();
+    if (SHOW_AI) void aiProvidersStore.load();
   });
 
   function resetAiModels() {
@@ -312,6 +313,7 @@
     </div>
   </article>
 
+  {#if SHOW_AI}
   <article class="card ai-card">
     <div class="ai-head">
       <h3>AI · Terjemahan</h3>
@@ -528,6 +530,7 @@
       </div>
     {/if}
   </article>
+  {/if}
 
   <article class="card">
     <h3>Data</h3>

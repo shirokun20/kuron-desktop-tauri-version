@@ -7,6 +7,8 @@
   // daftar bahasa fallback ke lane hasil grouping feed.
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "../api/client";
+  import { canUseNativeWindows } from "../api/platform";
+  import { openReaderWindow } from "../api/window";
   import MainGridCard from "../components/MainGridCard.svelte";
   import type { Chapter, Comment, Content, Tag } from "../domain/types";
   import { libraryStore } from "../stores/library.svelte";
@@ -247,12 +249,23 @@
   });
 
   async function openChapter(ch: Chapter) {
-    // Eksternal (baca di situs asal) → browser; sisanya reader in-app.
+    // Eksternal (baca di situs asal) → browser; sisanya popup reader.
     if (ch.is_external) {
       if (ch.external_url) await openUrl(ch.external_url);
       return;
     }
     sheetOpen = false;
+    // Desktop Tauri: reader = popup window native ala About (#reader).
+    // Gagal / mode web = fallback route reader in-app (alur tetap hidup).
+    if (canUseNativeWindows()) {
+      const err = await openReaderWindow(
+        content.source_id,
+        content.id,
+        ch.id,
+        laneKey,
+      );
+      if (!err) return;
+    }
     onopenchapter(ch, visible);
   }
 

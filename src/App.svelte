@@ -1,8 +1,8 @@
 <script lang="ts">
   // AppShell — splash -> main (ganti GoRouter, spec §16).
-  // Hash #source-picker / #about / #extensions / #filter = popup window native
-  // (desktop Tauri); di web & mobile isi yang sama muncul sebagai overlay
-  // in-app lewat `<OverlayHost />` (lihat `stores/overlay.svelte`).
+  // Hash #source-picker / #about / #extensions / #filter = popup window
+  // native (desktop Tauri) + overlay in-app web/mobile (`OverlayHost`).
+  // Hash #reader = popup window native (desktop); web = route fullscreen.
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { routeStore } from "./lib/router/route.svelte";
@@ -13,6 +13,7 @@
   import MainPage from "./lib/pages/MainPage.svelte";
   import DetailPage from "./lib/pages/DetailPage.svelte";
   import ReaderPage from "./lib/pages/ReaderPage.svelte";
+  import ReaderWindowPage from "./lib/pages/ReaderWindowPage.svelte";
   import SourcePickerPage from "./lib/pages/SourcePickerPage.svelte";
   import AboutPage from "./lib/pages/AboutPage.svelte";
   import ExtensionManagerPage from "./lib/pages/ExtensionManagerPage.svelte";
@@ -24,11 +25,12 @@
   const isAbout = hash === "#about";
   const isExt = hash === "#extensions";
   const isFilter = hash === "#filter";
+  const isReader = hash === "#reader" || hash.startsWith("#reader?");
 
   onMount(() => {
     // Snapshot platform (tauri/web + lebar layar) untuk semua keputusan tap.
     platformStore.init();
-    if (isPicker || isAbout || isExt || isFilter) return;
+    if (isPicker || isAbout || isExt || isFilter || isReader) return;
     listen<string>("source-selected", (e) => sourceStore.select(e.payload)).catch(() => {
       // mode browser: event Tauri tidak ada
     });
@@ -52,6 +54,17 @@
     {#snippet failed(error)}
       <main class="boot-err">
         <h1>Gagal buka Filter</h1>
+        <p>{error instanceof Error ? error.message : String(error)}</p>
+        <p class="hint">Screenshot teks ini lalu kirim — biar akar masalah ketemu.</p>
+      </main>
+    {/snippet}
+  </svelte:boundary>
+{:else if isReader}
+  <svelte:boundary>
+    <ReaderWindowPage />
+    {#snippet failed(error)}
+      <main class="boot-err">
+        <h1>Gagal buka Bacaan</h1>
         <p>{error instanceof Error ? error.message : String(error)}</p>
         <p class="hint">Screenshot teks ini lalu kirim — biar akar masalah ketemu.</p>
       </main>

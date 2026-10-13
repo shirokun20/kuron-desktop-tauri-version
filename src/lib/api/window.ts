@@ -51,6 +51,7 @@ async function openPopup(
   width: number,
   height: number,
   fresh = false,
+  opts?: { resizable?: boolean; minWidth?: number; minHeight?: number },
 ): Promise<string | null> {
   if (!canUseNativeWindows()) {
     // Web & mobile: jangan sentuh window API — pemanggil (overlay store)
@@ -85,9 +86,11 @@ async function openPopup(
       width,
       height,
       center: true,
-      resizable: false,
+      resizable: opts?.resizable ?? false,
       decorations: true,
       transparent: false,
+      minWidth: opts?.minWidth,
+      minHeight: opts?.minHeight,
     });
     return await new Promise<string | null>((resolve) => {
       const timer = setTimeout(
@@ -132,6 +135,28 @@ export function openExtensionManager(): Promise<string | null> {
 /** Popup window native "Filter Pencarian". Selalu dibuat ulang (fresh). */
 export function openFilterWindow(): Promise<string | null> {
   return openPopup("filter", "#filter", "Filter Pencarian", 560, 720, true);
+}
+
+/** Popup window native "Baca". Selalu dibuat ulang (fresh) agar bab yang
+ *  dibuka selalu ikut klik terakhir; detail + daftar bab diambil sendiri
+ *  oleh popup dari backend via query hash (window baru = store kosong). */
+export function openReaderWindow(
+  source: string,
+  contentId: string,
+  chapterId: string,
+  lang?: string | null,
+): Promise<string | null> {
+  const q = new URLSearchParams({
+    source,
+    content: contentId,
+    chapter: chapterId,
+  });
+  if (lang) q.set("lang", lang);
+  return openPopup("reader", `#reader?${q.toString()}`, "Baca", 1024, 768, true, {
+    resizable: true,
+    minWidth: 900,
+    minHeight: 650,
+  });
 }
 
 /** Jenis popup native — satu union untuk `stores/overlay.svelte`. */

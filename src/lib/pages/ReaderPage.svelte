@@ -14,7 +14,7 @@
   import ReaderCanvas from "../components/ReaderCanvas.svelte";
   import { defaultMode } from "../utils/readerLayout";
   import type { ReaderMode } from "../stores/settingsPersist";
-
+  import { SHOW_AI } from "../config/features";
   let {
     content,
     chapter,
@@ -44,7 +44,8 @@
 
   onMount(() => {
     translateStore.startListening();
-    if (isTauriRuntime()) void aiProvidersStore.load();
+    // Jangan sentuh keychain (macOS prompt-spam) saat fitur AI disembunyikan.
+    if (SHOW_AI && isTauriRuntime()) void aiProvidersStore.load();
     return () => translateStore.stopListening();
   });
 
@@ -263,6 +264,7 @@
         »
       </button>
     </div>
+    {#if SHOW_AI}
     <div class="aibar" role="group" aria-label="Terjemahan AI">
       <button
         type="button"
@@ -325,6 +327,7 @@
         </button>
       {/if}
     </div>
+    {/if}
     {#if pages.length > 0}
       <span class="badge">{current} / {pages.length}</span>
     {/if}
@@ -341,12 +344,14 @@
   {#if error}
     <p class="err">{error}</p>
   {/if}
+  {#if SHOW_AI}
   {#if tlBanner()}
     <p class="tl-banner" role="status">{tlBanner()}</p>
   {:else if translateStore.stage === "detecting"}
     <p class="tl-banner busy" role="status">Mendeteksi bubble…</p>
   {:else if translateStore.stage === "translating"}
     <p class="tl-banner busy" role="status">Menerjemahkan halaman {current}…</p>
+  {/if}
   {/if}
   {#if !loading && !error && pages.length === 0}
     <p class="muted center">Tidak ada halaman untuk bab ini.</p>
