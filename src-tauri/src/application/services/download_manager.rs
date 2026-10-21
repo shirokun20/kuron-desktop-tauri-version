@@ -533,6 +533,16 @@ mod tests {
                 .retain(|(s, c, _), _| !(s == source_id && c == content_id));
             Ok(())
         }
+        fn path(
+            &self,
+            source_id: &str,
+            content_id: &str,
+            page: u32,
+        ) -> Result<std::path::PathBuf, AppError> {
+            Ok(std::path::PathBuf::from(format!(
+                "/mem/{source_id}/{content_id}/page_{page}.jpg"
+            )))
+        }
     }
 
     #[derive(Default)]

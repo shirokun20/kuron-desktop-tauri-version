@@ -14,8 +14,8 @@ pub use ai_commands::{
     cmd_translate_page,
 };
 pub use content_commands::{
-    cmd_get_chapters, cmd_get_comments, cmd_get_detail, cmd_get_page_images, cmd_get_related,
-    cmd_home_feed, cmd_search, cmd_search_form, cmd_tag_query,
+    cmd_cache_page_image, cmd_get_chapters, cmd_get_comments, cmd_get_detail, cmd_get_page_images,
+    cmd_get_related, cmd_home_feed, cmd_search, cmd_search_form, cmd_tag_query,
 };
 pub use download_commands::{
     cmd_download_list, cmd_download_pause, cmd_download_remove, cmd_download_resume,

@@ -14,7 +14,9 @@
   import BubbleOutline from "./BubbleOutline.svelte";
   import TranslationOverlay from "./TranslationOverlay.svelte";
 
-  const KEEP = 1;
+  // Prefetch (A): ±2 halaman di-mount + mulai di-fetch lebih awal agar
+  // scroll tak menunggu satu per satu; cache disk (B) membuat hit lokal.
+  const KEEP = 2;
 
   let {
     pages,
@@ -335,7 +337,8 @@
                 {src}
                 data-vpage={p}
                 alt={`Halaman ${p}`}
-                loading="lazy"
+                loading={p <= current + 2 ? "eager" : "lazy"}
+                fetchpriority={p === current + 1 ? "high" : "auto"}
                 draggable="false"
                 referrerpolicy="no-referrer"
                 onerror={() => markMiss(p)}

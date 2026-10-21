@@ -39,6 +39,9 @@
   let error = $state<string | null>(null);
   /** Halaman yang gagal dimuat (1-based) — tiap tile bawa tombol reload. */
   let failed = $state(new Set<number>());
+  /** Halaman yang sudah tampil dari URL remote — jangan tukar src-nya
+   *  (anti-kedip); cache disk tetap menghangat untuk buka ulang. */
+  let shown = $state(new Set<number>());
   let lastRecord = 0;
   let rootEl: HTMLElement | null = $state(null);
 
@@ -164,6 +167,10 @@
       failed.delete(p);
       failed = new Set(failed);
     }
+    if (!shown.has(p)) {
+      shown.add(p);
+      shown = new Set(shown);
+    }
   }
 
   function trackPage(p: number) {
@@ -180,11 +187,36 @@
     pages = [];
     rawPages = [];
     failed = new Set();
+    shown = new Set();
     current = 1;
     lastRecord = 0;
     translateStore.resetPage();
     scrollTop();
     let cancelled = false;
+    // Hangatkan cache disk per halaman (B): tampil tetap instan dari
+    // Remote, tukar ke lokal saat siap & belum terlihat (anti-kedip).
+    // Gagal/tile-error ikut pulih gratis saat versi lokal tiba.
+    function warmCache(res: PageImageResult[]) {
+      if (!isTauriRuntime()) return;
+      const cid = content.id;
+      res.forEach((p, i) => {
+        if (p.kind !== "Remote") return;
+        api
+          .cachePageImage({ source_id: src, content_id: cid, page: i, url: p.value })
+          .then((r) => {
+            if (cancelled || r.kind !== "Cached") return;
+            const n = i + 1;
+            if (shown.has(n)) return;
+            pages[i] = srcOf(r);
+            pages = [...pages];
+            if (failed.has(n)) {
+              failed.delete(n);
+              failed = new Set(failed);
+            }
+          })
+          .catch(() => {});
+      });
+    }
     // Backend: kirim `external_url` penuh bila ada (komentar impl).
     api
       .pageImages(ch.external_url ?? ch.id, src)
@@ -197,6 +229,7 @@
           lastRecord = Date.now();
           libraryStore.recordHistory(content, 1);
         }
+        warmCache(res);
       })
       .catch((e) => {
         if (!cancelled) error = `gagal muat halaman: ${e}`;

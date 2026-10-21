@@ -76,6 +76,14 @@ export const api = {
     }),
   pageImages: (chapterId: string, source?: string): Promise<PageImageResult[]> =>
     call("cmd_get_page_images", { chapterId, source: source ?? null }),
+  // Hangatkan satu halaman reader ke disk backend (UA/cookie-jar Rust);
+  // `Cached(path)` = tampil lokal, `Remote` = fallback langsung (lama).
+  cachePageImage: (args: {
+    source_id: string;
+    content_id: string;
+    page: number;
+    url: string;
+  }): Promise<PageImageResult> => call("cmd_cache_page_image", args),
   // image_ops (Fase 3): payload base64; backend spawn_blocking.
   imageChunkWebtoon: (data: string, maxChunkH: number): Promise<string[]> =>
     call("cmd_image_chunk_webtoon", { data, maxChunkH }),

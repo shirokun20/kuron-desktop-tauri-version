@@ -6,6 +6,7 @@ pub mod usecases;
 
 pub use services::{DownloadEventSink, DownloadManager, NullDownloadSink};
 pub use usecases::{
+    cache_page_image::CachePageImageUseCase,
     clear_history::ClearHistoryUseCase,
     clear_library::ClearLibraryUseCase,
     delete_ai_provider::DeleteAiProviderUseCase,

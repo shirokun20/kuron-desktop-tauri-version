@@ -46,6 +46,24 @@ impl ImageCache {
             .unwrap_or(false)
     }
 
+    /// Path absolut file halaman (untuk `convertFileSrc` di reader).
+    /// Validasi 1:1 `remove_content` — path ini diekspos ke WebView.
+    pub fn page_path(
+        &self,
+        source_id: &str,
+        content_id: &str,
+        page: u32,
+    ) -> Result<std::path::PathBuf, AppError> {
+        for part in [source_id, content_id] {
+            if part.is_empty() || part.contains("..") || part.contains('/') || part.contains('\\') {
+                return Err(AppError::Validation(format!("path komponen buruk: {part}")));
+            }
+        }
+        Ok(self
+            .inner
+            .root()
+            .join(Self::key(source_id, content_id, page)))
+    }
     /// Hapus seluruh halaman satu konten (`$root/$sourceId/$contentId/`).
     pub fn remove_content(&self, source_id: &str, content_id: &str) -> Result<(), AppError> {
         for part in [source_id, content_id] {
@@ -79,6 +97,15 @@ impl crate::domain::repositories::PageCache for ImageCache {
     fn remove_content(&self, source_id: &str, content_id: &str) -> Result<(), AppError> {
         ImageCache::remove_content(self, source_id, content_id)
     }
+
+    fn path(
+        &self,
+        source_id: &str,
+        content_id: &str,
+        page: u32,
+    ) -> Result<std::path::PathBuf, AppError> {
+        self.page_path(source_id, content_id, page)
+    }
 }
 
 #[cfg(test)]
@@ -97,6 +124,19 @@ mod tests {
             b"jpeg-bytes"
         );
         assert!(dir.join("nhentai/m1/page_1.jpg").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn page_path_validasi_traversal() {
+        let dir = std::env::temp_dir().join(format!("kuron-test-imgpath-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cache = ImageCache::new(&dir, 1024 * 1024).unwrap();
+        assert_eq!(
+            cache.page_path("nhentai", "m1", 2).unwrap(),
+            dir.join("nhentai/m1/page_2.jpg")
+        );
+        assert!(cache.page_path("../evil", "m1", 0).is_err());
+        assert!(cache.page_path("nhentai", "", 0).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

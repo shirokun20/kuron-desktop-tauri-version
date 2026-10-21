@@ -6,10 +6,11 @@ use tauri::State;
 
 use crate::{
     application::{
-        GetChaptersUseCase, GetCommentsUseCase, GetContentDetailUseCase, GetHomeFeedUseCase,
-        GetPageImagesUseCase, GetRelatedContentUseCase, SearchContentUseCase,
+        CachePageImageUseCase, GetChaptersUseCase, GetCommentsUseCase, GetContentDetailUseCase,
+        GetHomeFeedUseCase, GetPageImagesUseCase, GetRelatedContentUseCase, SearchContentUseCase,
     },
     core::AppState,
+    data::services::http_fetcher_arc,
     domain::{Chapter, Comment, Content, PageImageResult, SearchFilter},
 };
 
@@ -389,6 +390,26 @@ pub async fn cmd_get_page_images(
         .execute(&chapter_id)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Hangatkan satu halaman reader ke disk (`ImageCache`, 8.1) lalu kembalikan
+/// `Cached(path)`; gagal fetch/simpan = `Remote(url)` (fallback perilaku lama).
+/// Dipanggil FE per halaman secara konkuren saat bab dibuka (progresif).
+#[tauri::command]
+pub async fn cmd_cache_page_image(
+    state: State<'_, AppState>,
+    source_id: String,
+    content_id: String,
+    page: u32,
+    url: String,
+) -> Result<PageImageResult, String> {
+    CachePageImageUseCase::new(
+        http_fetcher_arc(state.http.clone()),
+        state.image_cache.clone(),
+    )
+    .execute(&source_id, &content_id, page, &url)
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -1,3 +1,4 @@
+pub mod cache_page_image;
 pub mod clear_history;
 pub mod clear_library;
 pub mod delete_ai_provider;
